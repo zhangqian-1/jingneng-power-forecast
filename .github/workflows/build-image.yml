@@ -1,4 +1,4 @@
-name: Build Docker Image
+name: Build And Test Docker Image
 
 on:
   push:
@@ -28,12 +28,40 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Build image for integration test
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          load: true
+          push: false
           tags: |
             ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:v2
             ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:latest
+
+      - name: Build daily requests from real station CSVs
+        run: |
+          PYTHONPATH=app python tests/build_real_test_payloads.py \
+            --raw-dir tests/real_data_raw \
+            --output-dir tests/fixtures/real_data_daily
+
+      - name: Start container
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/power-forecast-runtime"
+          docker run -d --name power-forecast-test \
+            -p 8000:8000 \
+            -v "$RUNNER_TEMP/power-forecast-runtime:/app/runtime" \
+            ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:latest
+
+      - name: Test API with real-data fixtures
+        run: python tests/run_api_test.py --fixture-dir tests/fixtures/real_data_daily
+
+      - name: Stop test container
+        if: always()
+        run: docker rm -f power-forecast-test
+
+      - name: Push tested image
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:v2
+          docker push ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:latest

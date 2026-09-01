@@ -13,3 +13,5 @@ env/
 .idea/
 .vscode/
 
+# Real CSVs are kept only for the private GitHub integration test.
+tests/fixtures/
