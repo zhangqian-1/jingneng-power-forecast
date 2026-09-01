@@ -1,0 +1,15 @@
+# Runtime state must stay on the deployment host.
+runtime/
+*.log
+*.tmp
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment and IDE files.
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+

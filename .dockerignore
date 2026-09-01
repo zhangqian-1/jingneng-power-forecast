@@ -1,0 +1,36 @@
+# 忽略Python编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 测试和覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 文档
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# 大文件和临时文件
+*.log
+*.tmp
+.DS_Store
