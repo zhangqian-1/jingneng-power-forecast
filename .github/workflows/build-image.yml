@@ -39,6 +39,12 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:v2
             ghcr.io/${{ github.repository_owner }}/jingneng-power-forecast:latest
 
+      - name: Install test-data generator dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "numpy>=1.24,<3.0" \
+            "pandas>=2.0,<3.0"
+
       - name: Build daily requests from real station CSVs
         run: |
           PYTHONPATH=app python tests/build_real_test_payloads.py \
