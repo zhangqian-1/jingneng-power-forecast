@@ -1,10 +1,13 @@
 # 京能全站总功率预测服务
 
-完整的输入、数据处理、模型推理和输出流程见：
+配套交接材料：
 
-```text
-全站总功率预测模型_输入到输出完整流程.md
-```
+    docs/测点需求清单.md
+    docs/接口交接说明.md
+    docs/Docker部署运行说明.md
+    docs/上线验收说明.md
+
+输入输出 JSON 文件样例位于 examples 目录。
 
 本目录是生产运行包。外部系统每 15 分钟提交最近 1 天真实数据，服务内部持久化并拼接历史数据，再调用本次离线训练并导出的 7 天模型预测未来 1 天。
 
@@ -31,6 +34,29 @@ py -3.11 app/api.py --host 0.0.0.0 --port 8000 --device cuda
 ```
 
 ## 接口
+
+### 调用约定
+
+外部系统每 15 分钟调用一次 `POST /api/power/forecast`，请求体为 JSON，
+每次提交最近一天的 96 个连续时间点。正式输入必须包含 10 个场站的全部功率、
+温度和湿度测点；服务端按时间戳合并重复请求并持续保存真实历史数据。
+
+完整输入文件样例见 `examples/input_example.json`。该文件来自十个场站原始数据中的
+真实连续 96 点，可直接作为接口联调格式参考。完整成功响应见
+`examples/output_example.json`；历史缓存不足时的正常响应见
+`examples/output_not_ready_409.json`。
+
+请求示例：
+
+```bash
+curl -X POST "http://服务器IP:8000/api/power/forecast" \
+  -H "Content-Type: application/json" \
+  --data-binary @examples/input_example.json
+```
+
+输入 JSON 的顶层字段为 `batchTime`、`intervalMinutes`、`historyDays` 和 `data`。
+每个 `data` 元素包含 `ts` 与 `stations`；每个场站包含 `load_points` 和
+`weather_points`。功率点单位为 MW，采样间隔为 15 分钟。
 
 ### 提交最近一天真实数据
 
@@ -74,7 +100,7 @@ GET /api/power/forecast/latest
 
 线上执行与离线一致的完整链路：`NHITS + PatchTST` 低频融合、`StationAttentionHF` 站点细节预测、MAE/HF 二次融合，以及最终 TrendDetail 趋势细节叠加。本次所有模型均使用同一份真实历史训练数据、同一时间切分和同一数据处理规则重新训练，并保存为可加载产物。最终 TrendDetail 使用 `mae_smooth_w12 + 0.95 * hf_highpass_w24`。
 
-活动模型由 `models/active_model.json` 指定。模型版本目录包含全部模型文件、融合参数、指标和 SHA-256 哈希。后续换模型时新增版本目录并切换该配置，接口代码不需要修改。
+活动模型由 `models/active_model.json` 指定。模型版本目录包含全部模型文件、融合参数、指标和 SHA-256 哈希。
 
 ## 输出示意
 
@@ -82,7 +108,10 @@ GET /api/power/forecast/latest
 {
   "code": 200,
   "msg": "success",
+  "batchTime": "202512312345",
+  "generatedAt": "2026-09-01T20:00:00+08:00",
   "model": "StationAttentionFusion_TrendDetail_deployable_v2",
+  "accuracyBasis": "historical_test_error_by_forecast_horizon",
   "testRMSE": 285.4938,
   "historyCache": {
     "ready": true,
@@ -91,12 +120,38 @@ GET /api/power/forecast/latest
   },
   "data": [
     {
-      "predictedTime": "未来时间",
+      "predictedTime": "202601010000",
       "timeSeries": 1,
-      "predictedPower": "全站总功率预测值",
-      "accuracy": "基于真实测试集逐预测步历史误差的估算值"
+      "predictedPower": 1234.56,
+      "accuracy": "96.42%"
+    },
+    {
+      "predictedTime": "202601010015",
+      "timeSeries": 2,
+      "predictedPower": 1241.78,
+      "accuracy": "96.08%"
     }
   ]
+}
+```
+
+正式成功响应固定返回 96 个预测点，`predictedPower` 单位为 MW；`accuracy` 是
+根据离线测试集、按预测步长统计的历史误差估计值，不代表未来真实准确率。完整的
+真实响应样例见 `examples/output_example.json`。上方只展示两个点，数值仅用于说明
+字段类型；联调时以接口真实返回值为准。
+
+缓存未满时返回 HTTP `409`，表示历史数据尚未达到模型要求，不表示服务崩溃：
+
+```json
+{
+  "code": 409,
+  "msg": "历史数据不足，暂不能预测",
+  "historyCache": {
+    "ready": false,
+    "continuousPoints": 480,
+    "requiredPoints": 672
+  },
+  "data": []
 }
 ```
 
@@ -106,15 +161,4 @@ GET /api/power/forecast/latest
 - 不把预测结果 CSV 当作模型；
 - 真实缓存文件由接口请求产生，Docker 部署时应把 `runtime/` 挂载到持久化目录；
 - 上线前运行 `py -3.11 check_config.py` 检查活动模型、全部组件哈希和接口配置。
-
-## 更换模型
-
-```text
-1. 将新的完整模型版本放入 models/versions/<版本名>/
-2. 在版本目录中提供 manifest.json 和全部权重
-3. 将 models/active_model.json 的 model_dir 改为新版本目录
-4. 运行 check_config.py
-5. 重启服务
-```
-
-接口层始终调用活动模型，不应在 `app/api.py` 中写死具体模型名称。
+- `tests/` 目录只用于本地或私有 GitHub Actions 的真实数据验收，不属于生产镜像运行依赖。

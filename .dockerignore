@@ -37,3 +37,6 @@ htmlcov/
 
 # Test fixtures and raw test data must never enter the production image.
 tests/
+
+# JSON examples are for interface handover and are not runtime dependencies.
+examples/

@@ -1,0 +1,10 @@
+{
+  "code": 409,
+  "msg": "历史数据不足，暂不能预测",
+  "historyCache": {
+    "ready": false,
+    "continuousPoints": 480,
+    "requiredPoints": 672
+  },
+  "data": []
+}
