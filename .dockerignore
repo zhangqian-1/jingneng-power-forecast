@@ -40,3 +40,13 @@ tests/
 
 # JSON examples are for interface handover and are not runtime dependencies.
 examples/
+
+# Runtime history and retired weights are not shipped with the active model.
+runtime/
+models/versions/trend_detail_v2/
+
+# Deployment configuration stays on the host, not in the build context.
+compose.yaml
+.env
+.env.*
+*.tar

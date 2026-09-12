@@ -1,0 +1,41 @@
+name: jingneng-power-forecast-7station
+
+services:
+  forecast:
+    image: ${POWER_FORECAST_IMAGE:?Set POWER_FORECAST_IMAGE in .env to the delivered image}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "${POWER_FORECAST_BIND:-127.0.0.1}:${POWER_FORECAST_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ${POWER_FORECAST_RUNTIME_DIR:-./runtime}
+        target: /app/runtime
+        bind:
+          create_host_path: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import json
+          import sys
+          from urllib.error import HTTPError
+          from urllib.request import urlopen
+          try:
+              with urlopen('http://127.0.0.1:8000/api/power/forecast/latest', timeout=5) as response:
+                  payload = json.load(response)
+              sys.exit(0 if payload.get('code') == 200 and len(payload.get('data', [])) == 96 else 1)
+          except HTTPError as error:
+              sys.exit(0 if error.code == 404 else 1)
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

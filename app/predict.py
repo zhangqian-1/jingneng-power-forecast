@@ -12,7 +12,7 @@ import pandas as pd
 import torch
 
 from history_cache import RealHistoryCache
-from input_adapter import InputAdapter
+from input_adapter import InputAdapter, STATION_FEATURES, STATION_LOAD_POINTS
 from models.normalizer import Normalizer
 from models.station_attention import StationAttentionHF
 from models.trend_detail import (
@@ -23,11 +23,12 @@ from models.trend_detail import (
     trend_detail_fusion,
 )
 from models.utils import time_feature_frame
+from models.causal_state import add_causal_states
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = PACKAGE_ROOT / "models" / "active_model.json"
-DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "real_history_cache.csv"
+DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_7station_2025_v1.csv"
 
 
 def _sha256(path: Path) -> str:
@@ -57,15 +58,20 @@ class StationAttentionComponent:
 
     def __init__(self, checkpoint_path: Path, device: torch.device) -> None:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-        if checkpoint.get("data_policy") != "real_historical_only_no_synthetic_fallback":
-            raise ValueError("StationAttention checkpoint does not declare the real-data policy")
+        if checkpoint.get("format_version") != "2025full_causal_v1":
+            raise ValueError("Expected the selected 2025 seven-station causal checkpoint")
+        if checkpoint.get("power_missing_policy") != "zero" or checkpoint.get("state_policy") != "causal_hold_4":
+            raise ValueError("Checkpoint preprocessing policy does not match production")
 
         self.device = device
         self.model_params = dict(checkpoint["model_params"])
         self.input_size = int(self.model_params["input_size"])
         self.horizon = int(self.model_params["horizon"])
         self.feature_columns = list(checkpoint["feature_columns"])
-        self.future_feature_columns = list(checkpoint["future_feature_columns"])
+        self.future_feature_columns = list(_future_feature_frame(pd.Timestamp("2025-01-01"), self.horizon).columns[1:])
+        self.future_feature_columns += list(checkpoint["future_state_profile_columns"])
+        if len(self.future_feature_columns) != self.model_params["n_future_features"]:
+            raise ValueError("Checkpoint future-feature count does not match production")
 
         normalizer = checkpoint["normalizer"]
         self.normalizer = Normalizer(
@@ -92,12 +98,9 @@ class StationAttentionComponent:
 
     def prepare_history(self, frame: pd.DataFrame) -> pd.DataFrame:
         frame = frame.copy()
-        for station_column, centers in self.state_centers.items():
-            values = frame[station_column].to_numpy(dtype=float)
-            state_ids = np.abs(values[:, None] - centers[None, :]).argmin(axis=1)
-            state_ids = self._smooth_short_state_runs(state_ids, min_run=4)
-            frame[f"{station_column}_state"] = state_ids.astype(float)
-            frame[f"{station_column}_state_center"] = centers[state_ids]
+        state_columns = [f"{station}_state" for station in self.state_centers]
+        if not all(column in frame for column in state_columns):
+            frame = add_causal_states(frame, self.state_centers)
         return frame.tail(self.input_size).reset_index(drop=True)
 
     def predict_raw(
@@ -156,25 +159,6 @@ class StationAttentionComponent:
             future_frame[column] = profiles[:, index]
         return future_frame
 
-    @staticmethod
-    def _smooth_short_state_runs(labels: np.ndarray, min_run: int = 4) -> np.ndarray:
-        labels = np.asarray(labels, dtype=int).copy()
-        for _ in range(2):
-            starts = [0]
-            for index in range(1, len(labels)):
-                if labels[index] != labels[index - 1]:
-                    starts.append(index)
-            starts.append(len(labels))
-            for start, end in zip(starts[:-1], starts[1:]):
-                if end - start >= min_run:
-                    continue
-                if start > 0:
-                    labels[start:end] = labels[start - 1]
-                elif end < len(labels):
-                    labels[start:end] = labels[end]
-        return labels
-
-
 class TrendDetailBackend:
     """Load and execute NHITS + PatchTST + StationAttention + TrendDetail."""
 
@@ -207,6 +191,11 @@ class TrendDetailBackend:
         self.station = StationAttentionComponent(
             model_dir / str(station["checkpoint"]), torch_device
         )
+        if set(self.station.state_centers) != {f"{name}_total_power" for name in STATION_FEATURES}:
+            raise ValueError("StationAttention checkpoint station list does not match the input adapter")
+        for station in manifest["input_data"]["stations"]:
+            if set(station["power_points"]) != STATION_LOAD_POINTS[station["station"]]:
+                raise ValueError("Model power-point list does not match the input adapter")
 
     def predict(self, frame: pd.DataFrame, last_timestamp: pd.Timestamp) -> np.ndarray:
         prepared = self.station.prepare_history(frame)
@@ -248,7 +237,9 @@ class TrendDetailBackend:
             hf_branch,
             self.manifest["trend_detail"],
         )
-        return np.maximum(prediction.reshape(-1), 0.0)
+        if not np.isfinite(prediction).all():
+            raise ValueError("Model returned non-finite predictions")
+        return prediction.reshape(-1)
 
     def _verify_artifacts(self) -> None:
         expected = dict(self.manifest.get("artifacts", {}))
@@ -295,6 +286,8 @@ class PowerPredictor:
         self.history_cache = RealHistoryCache(
             cache_path=history_cache_path,
             required_points=self.input_size,
+            state_centers=self.backend.station.state_centers,
+            model_name=self.model_name,
         )
         self.input_adapter = InputAdapter()
 

@@ -22,9 +22,6 @@ STATION_FEATURES = {
     "京丰燃气": "京丰燃气",
     "未来热电": "未来热电",
     "上庄热电": "上庄热电",
-    "深圳钰湖": "深圳钰湖",
-    "钰海电力": "钰海电力",
-    "京宜热电": "京宜热电",
 }
 
 STATION_LOAD_POINTS = {
@@ -53,19 +50,6 @@ STATION_LOAD_POINTS = {
     "京丰燃气": {"JFRD_11MKA01GA001BJ40XQ01"},
     "未来热电": {"WLRD_13MKA0100000BJ01XQ01", "WLRD_11MBY10CE901XQ01"},
     "上庄热电": {"SZRD_10DCS02FA133", "SZRD_10DCS02FA134"},
-    "深圳钰湖": {
-        "SZYH_11MKA01GA003BJ04XQ01",
-        "SZYH_13MKY01UH001BJ09XQ01",
-        "SZYH_14MKA01GA001SF02XQ01",
-        "SZYH_15MKY01UH001BJ30XQ01",
-    },
-    "钰海电力": {"YHDL_10_09416", "YHDL_20_07644"},
-    "京宜热电": {
-        "ZJRD_01CFA10CE001XQ01",
-        "ZJRD_01DEH01MY101BJ01XQ04",
-        "ZJRD_02CFA10CE001XQ01",
-        "ZJRD_02DEH01XQ002XQ01",
-    },
 }
 
 STATION_WEATHER_POINTS = {
@@ -81,13 +65,6 @@ STATION_WEATHER_POINTS = {
     "京丰燃气": {"JFRD_11MBL0100000BT02XQ01", "JFRD_11MBL0100000BM01XQ01"},
     "未来热电": {"WLRD_11MBL01WP001BT01XQ01", "WLRD_11MBL01WP001BM01XQ01"},
     "上庄热电": {"SZRD_11MBL10CT901ZQ01", "SZRD_11MBL10CM901ZQ01"},
-    "深圳钰湖": {
-        "SZYH_11MBL01GQ001BT01XQ02",
-        "SZYH_14MBC01GQ001GQ02XJ01",
-        "YHDL_11MBL1000000BM01XQ01",
-    },
-    "钰海电力": {"YHDL_10_08505", "YHDL_11MBL1000000BM01XQ01"},
-    "京宜热电": {"ZJRD_01MBL30CT005XQ01", "ZJRD_01MBL30CM005XQ01"},
 }
 
 # The point IDs are taken from the approved input format in the handover document.
@@ -108,12 +85,6 @@ WEATHER_POINT_KIND = {
     "WLRD_11MBL01WP001BM01XQ01": "humidity",
     "SZRD_11MBL10CT901ZQ01": "temperature",
     "SZRD_11MBL10CM901ZQ01": "humidity",
-    "SZYH_11MBL01GQ001BT01XQ02": "temperature",
-    "SZYH_14MBC01GQ001GQ02XJ01": "temperature",
-    "YHDL_11MBL1000000BM01XQ01": "humidity",
-    "YHDL_10_08505": "temperature",
-    "ZJRD_01MBL30CT005XQ01": "temperature",
-    "ZJRD_01MBL30CM005XQ01": "humidity",
 }
 
 FAHRENHEIT_POINT_IDS = {
@@ -152,7 +123,7 @@ def _measurement_or_nan(value: Any) -> float:
 
 
 class InputAdapter:
-    """Convert the documented 10-station JSON payload into model features."""
+    """Convert the documented seven-station JSON payload into model features."""
 
     def parse_json(self, payload: Mapping[str, Any]) -> ParsedInput:
         if not isinstance(payload, Mapping):
@@ -187,7 +158,7 @@ class InputAdapter:
             for point_id in point_ids
         ]
         input_quality = {
-            "missingValuePolicy": "previous_value_after_history_merge",
+            "missingValuePolicy": "power_zero_weather_causal_forward_fill",
             "zeroValuePolicy": "zero_is_valid_measurement",
             "submittedMissingLoadValues": int(frame[load_columns].isna().sum().sum()),
             "submittedMissingWeatherValues": int(frame[weather_columns].isna().sum().sum()),
@@ -317,31 +288,23 @@ class InputAdapter:
         frame: pd.DataFrame,
         load_columns: list[str],
         weather_columns: list[str],
-        allow_leading_backfill: bool = True,
+        allow_leading_backfill: bool = False,
     ) -> dict[str, Any]:
-        point_columns = load_columns + weather_columns
-        original = frame[point_columns].copy()
-        after_forward_fill = original.ffill()
-        forward_fill_mask = original.isna() & after_forward_fill.notna()
-        after_fill = after_forward_fill.bfill() if allow_leading_backfill else after_forward_fill
-        leading_fill_mask = after_forward_fill.isna() & after_fill.notna()
-
-        unresolved = after_fill.columns[after_fill.isna().any()].tolist()
-        if unresolved:
-            readable = [column.split("::", 2)[-1] for column in unresolved]
-            raise InputValidationError(
-                "以下测点在本次96点中始终没有真实值，无法沿用上个点: "
-                f"{readable}"
-            )
-        frame[point_columns] = after_fill
-
+        if allow_leading_backfill:
+            raise InputValidationError("当前模型禁止使用未来测量值回填历史")
+        original = frame[load_columns + weather_columns].copy()
+        frame[load_columns] = original[load_columns].fillna(0.0)
+        frame[weather_columns] = original[weather_columns].ffill()
+        filled = original[weather_columns].isna() & frame[weather_columns].notna()
         return {
-            "missingValuePolicy": "previous_value_forward_fill",
+            "missingValuePolicy": "power_zero_weather_causal_forward_fill",
             "zeroValuePolicy": "zero_is_valid_measurement",
+            "negativeValuePolicy": "retain_finite_measurement",
             "missingLoadValues": int(original[load_columns].isna().sum().sum()),
             "missingWeatherValues": int(original[weather_columns].isna().sum().sum()),
-            "forwardFilledValues": int(forward_fill_mask.sum().sum()),
-            "leadingValuesInitializedFromFirstRealValue": int(leading_fill_mask.sum().sum()),
+            "zeroFilledLoadValues": int(original[load_columns].isna().sum().sum()),
+            "forwardFilledWeatherValues": int(filled.sum().sum()),
+            "leadingValuesInitializedFromFirstRealValue": 0,
         }
 
     @staticmethod
@@ -360,6 +323,8 @@ class InputAdapter:
 
     @staticmethod
     def _validate_timeline(ts: pd.Series) -> None:
+        if ts.isna().any() or not ts.eq(ts.dt.floor("15min")).all():
+            raise InputValidationError("时间戳必须有效且对齐15分钟整刻")
         if ts.duplicated().any():
             duplicates = ts[ts.duplicated()].astype(str).tolist()
             raise InputValidationError(f"时间戳重复: {duplicates[:3]}")

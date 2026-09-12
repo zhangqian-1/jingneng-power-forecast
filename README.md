@@ -1,164 +1,55 @@
-# 京能全站总功率预测服务
+# 京能七站总功率预测服务
 
-配套交接材料：
+接收七个场站的真实功率、温度和湿度，返回未来 24 小时的 **96 点总功率预测**，间隔 15 分钟，单位 MW。当前模型版本：`trend_detail_7station_2025_v1`。
 
-    docs/测点需求清单.md
-    docs/接口交接说明.md
-    docs/Docker部署运行说明.md
-    docs/上线验收说明.md
+## 交接时看这三份说明
 
-输入输出 JSON 文件样例位于 examples 目录。
-
-本目录是生产运行包。外部系统每 15 分钟提交最近 1 天真实数据，服务内部持久化并拼接历史数据，再调用本次离线训练并导出的 7 天模型预测未来 1 天。
-
-```text
-外部每次提交最近1天96点
-→ 与本地真实历史缓存按时间戳合并、去重、更新
-→ 保留最近连续7天672点作为模型输入（最多额外保留96点用于状态特征平滑）
-→ 完整离线TrendDetail模型链预测未来1天96点
-→ 接口返回JSON
-```
-
-输入数据处理：十个场站的全部功率测点先求和形成一个 `total_power`，再进行全站总功率预测。缺失或非数值测点沿用上一时刻真实值；数值 `0` 保留为有效值；不插值、不做低负荷修复、不改写异常值、不生成虚拟数据。温湿度按同样的上一真实值规则补齐，深圳钰湖华氏温度点在模型输入前转换为摄氏度。
-
-## 启动
-
-```bash
-py -3.11 app/api.py --host 0.0.0.0 --port 8000
-```
-
-GPU 环境：
-
-```bash
-py -3.11 app/api.py --host 0.0.0.0 --port 8000 --device cuda
-```
-
-## 接口
-
-### 调用约定
-
-外部系统每 15 分钟调用一次 `POST /api/power/forecast`，请求体为 JSON，
-每次提交最近一天的 96 个连续时间点。正式输入必须包含 10 个场站的全部功率、
-温度和湿度测点；服务端按时间戳合并重复请求并持续保存真实历史数据。
-
-完整输入文件样例见 `examples/input_example.json`。该文件来自十个场站原始数据中的
-真实连续 96 点，可直接作为接口联调格式参考。完整成功响应见
-`examples/output_example.json`；历史缓存不足时的正常响应见
-`examples/output_not_ready_409.json`。
-
-请求示例：
-
-```bash
-curl -X POST "http://服务器IP:8000/api/power/forecast" \
-  -H "Content-Type: application/json" \
-  --data-binary @examples/input_example.json
-```
-
-输入 JSON 的顶层字段为 `batchTime`、`intervalMinutes`、`historyDays` 和 `data`。
-每个 `data` 元素包含 `ts` 与 `stations`；每个场站包含 `load_points` 和
-`weather_points`。功率点单位为 MW，采样间隔为 15 分钟。
-
-### 提交最近一天真实数据
-
-```text
-POST /api/power/forecast
-Content-Type: application/json
-```
-
-每次请求必须包含最近一天共 96 个连续时间点。服务会将请求与 `runtime/real_history_cache.csv` 合并，重复时间使用最新提交的非空真实值，不会重复累计。
-
-缓存不足 672 个连续点时返回 HTTP `409`，并返回当前缓存进度。数据已经保存，后续请求会继续累计。服务最多保留 768 个连续点：最近 672 点送入模型，额外 96 点只用于状态特征平滑。缓存满足 672 点后，接口直接返回未来一天 96 个预测点。
-
-缺失规则：
-
-- 未传场站、未传测点、空值或非数值：使用缓存中该测点上一时刻真实值；
-- 数值 `0`：有效实测值，不填充；
-- 缓存首次初始化时首点缺失：可使用本批次该测点最早真实值初始化；
-- 某测点在可用历史中完全没有真实值：返回错误，不生成随机值或固定值。
-
-### 获取最近一次预测结果
-
-```text
-GET /api/power/forecast/latest
-```
-
-尚未完成过一次真实预测时返回 `404`。
-
-## 线上模型
-
-| 项目 | 内容 |
+| 要做什么 | 对应文件 |
 |---|---|
-| 模型 | `StationAttentionFusion_TrendDetail_deployable_v2` |
-| 外部单次输入 | 最近1天，96点 |
-| 服务内部缓存 | 最多768点，其中最近672点为模型输入，额外96点用于状态特征平滑 |
-| 模型实际输入 | 过去7天，672点 |
-| 模型输出 | 未来1天，96点 |
-| 测试集RMSE | 285.49 MW |
-| 测试集MAPE | 6.9694% |
-| 波动差分强度 | `diff_std_ratio=0.7950` |
-| 数据划分 | 0.6 / 0.2 / 0.2 |
+| 封装、启动、检查服务能否预测 | [Docker 部署运行说明](docs/Docker部署运行说明.md) |
+| 接口地址、请求头、输入输出、错误处理 | [接口交接说明](docs/接口交接说明.md) |
+| 每个场站要传哪些字段、单位及缺失处理 | [测点需求清单](docs/测点需求清单.md) |
 
-线上执行与离线一致的完整链路：`NHITS + PatchTST` 低频融合、`StationAttentionHF` 站点细节预测、MAE/HF 二次融合，以及最终 TrendDetail 趋势细节叠加。本次所有模型均使用同一份真实历史训练数据、同一时间切分和同一数据处理规则重新训练，并保存为可加载产物。最终 TrendDetail 使用 `mae_smooth_w12 + 0.95 * hf_highpass_w24`。
+## 一条命令启动
 
-活动模型由 `models/active_model.json` 指定。模型版本目录包含全部模型文件、融合参数、指标和 SHA-256 哈希。
+服务器安装并启动 Docker 引擎、安装 Compose 2.20+ 后，使用 [compose.yaml](compose.yaml) 与填写好的 `.env`（模板见 [.env.example](.env.example)）。模板的镜像地址留空，须填入成功构建交付的镜像；这条命令是启动已有镜像，不是构建镜像。在同一目录执行：
 
-## 输出示意
-
-```json
-{
-  "code": 200,
-  "msg": "success",
-  "batchTime": "202512312345",
-  "generatedAt": "2026-09-01T20:00:00+08:00",
-  "model": "StationAttentionFusion_TrendDetail_deployable_v2",
-  "accuracyBasis": "historical_test_error_by_forecast_horizon",
-  "testRMSE": 285.4938,
-  "historyCache": {
-    "ready": true,
-    "continuousPoints": 672,
-    "requiredPoints": 672
-  },
-  "data": [
-    {
-      "predictedTime": "202601010000",
-      "timeSeries": 1,
-      "predictedPower": 1234.56,
-      "accuracy": "96.42%"
-    },
-    {
-      "predictedTime": "202601010015",
-      "timeSeries": 2,
-      "predictedPower": 1241.78,
-      "accuracy": "96.08%"
-    }
-  ]
-}
+```bash
+docker compose up -d --wait --wait-timeout 300
 ```
 
-正式成功响应固定返回 96 个预测点，`predictedPower` 单位为 MW；`accuracy` 是
-根据离线测试集、按预测步长统计的历史误差估计值，不代表未来真实准确率。完整的
-真实响应样例见 `examples/output_example.json`。上方只展示两个点，数值仅用于说明
-字段类型；联调时以接口真实返回值为准。
+镜像未填写会直接提示错误；首次获取私有镜像可能需要登录仓库。端口、缓存目录、离线导入和测试位置见部署说明。启动成功后仍需平台传入真实历史数据，不会自动加载训练 CSV。
 
-缓存未满时返回 HTTP `409`，表示历史数据尚未达到模型要求，不表示服务崩溃：
+## 数据怎么进，结果怎么出
 
-```json
-{
-  "code": 409,
-  "msg": "历史数据不足，暂不能预测",
-  "historyCache": {
-    "ready": false,
-    "continuousPoints": 480,
-    "requiredPoints": 672
-  },
-  "data": []
-}
+1. 按部署说明启动容器。平台从自己的采集系统取数，不需要把训练 CSV 放到生产服务器。
+2. 平台按测点清单组织 JSON，每次提交完整七站最近一天的 96 个实测点。通常每 15 分钟调用一次，历史回放也可按天顺序提交。
+3. 向 `POST /api/power/forecast` 发送 JSON，请求头为 `Content-Type: application/json`，数据放在请求正文 Body 中。
+4. 首次启用时，先按时间顺序补传历史。至少需要 672 个连续且温湿度可构造的点；不足返回 `409`，数据仍会缓存。满足条件后返回 `200` 和未来 96 点。
+5. 从响应的 `data[].predictedTime` 和 `data[].predictedPower` 读取预测时间和功率。`GET /api/power/forecast/latest` 可取最近一次成功结果，不触发新预测。
+
+## 完整 JSON 样例
+
+- [输入样例](examples/input_example.json)：2025-10-19 的 96 个真实历史点。
+- [成功输出样例](examples/output_example.json)：历史缓存已预热后，模型预测的 2025-10-20 的 96 点。
+- [缓存不足输出样例](examples/output_not_ready_409.json)：首次提交 2025-10-06 数据时的 `409` 响应。
+
+在本包根目录调用已启动的服务。服务器本机用 `127.0.0.1`；跨机器调用使用部署方提供的网关或内网地址。Compose 默认只监听本机，不能直接从其他电脑访问“服务器IP:8000”。
+
+```bash
+curl -X POST "http://服务器IP:8000/api/power/forecast" -H "Content-Type: application/json" --data-binary @examples/input_example.json
 ```
 
-## 生产原则
+这里 `@examples/input_example.json` 表示由调用方读取文件内容并作为 Body 发送，服务器不需要这个文件。空缓存只发送一天样例不会直接预测成功；冷启动流程见接口说明，自动验收方式见部署说明。Windows PowerShell 请使用 `curl.exe`。
 
-- 不使用示例输入、随机数据或正弦模拟预测；
-- 不把预测结果 CSV 当作模型；
-- 真实缓存文件由接口请求产生，Docker 部署时应把 `runtime/` 挂载到持久化目录；
-- 上线前运行 `py -3.11 check_config.py` 检查活动模型、全部组件哈希和接口配置。
-- `tests/` 目录只用于本地或私有 GitHub Actions 的真实数据验收，不属于生产镜像运行依赖。
+## 使用前须知
+
+- 每个时间点是七站完整快照：19 个功率、8 个温度、8 个湿度字段。返回的是七站总功率，不是分别返回七站预测。
+- 功率缺失按 0，温湿度仅沿用过去真实值。若温湿度长期缺测，七天记录也可能不足以预测。
+- `/app/runtime` 必须持久化；缓存最多保留 768 个时间点（8 天）及状态上下文，不混用旧十站缓存。
+- `accuracy` 是模型离线测试的固定历史参考，不是本次预测的实时准确率。
+- 服务没有内置鉴权及 HTTPS，访问控制由部署平台或网关负责。
+
+本地完整测试集回放 MAPE 为 **10.8778%**。Compose 配置和 GitHub 容器测试流程已补充；新的容器流程、ARM64 镜像与目标服务器仍待实际执行验证，不能据此认定已正式上线。
+
+`docs/`、`examples/` 用于交接；`tests/` 用于接口测试和准确率复测，均不进入生产镜像。模型、运行代码及容器构建文件需要保留。

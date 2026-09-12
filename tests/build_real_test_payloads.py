@@ -1,4 +1,4 @@
-"""Build real-data API fixtures from the ten station CSV files.
+"""Build real-data API fixtures from the seven selected station CSV files.
 
 The generated JSON files contain only the selected seven-day test window,
 not the original CSV files. They are intended for the private GitHub Actions
@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
+import sys
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
 from input_adapter import STATION_FEATURES, STATION_LOAD_POINTS, STATION_WEATHER_POINTS
 
@@ -23,9 +27,6 @@ STATION_FILES = {
     "京丰燃气": "京丰燃气.csv",
     "未来热电": "未来热电.csv",
     "上庄热电": "上庄热电.csv",
-    "深圳钰湖": "深圳钰湖.csv",
-    "钰海电力": "钰海电力.csv",
-    "京宜热电": "京宜热电.csv",
 }
 
 
@@ -37,7 +38,9 @@ def load_station_frames(raw_dir: Path) -> dict[str, pd.DataFrame]:
             raise FileNotFoundError(f"missing station CSV: {path}")
         frame = pd.read_csv(path, encoding="utf-8-sig", low_memory=False)
         frame["ts"] = pd.to_datetime(frame["ts"])
-        frame = frame.drop_duplicates("ts").set_index("ts").sort_index()
+        if frame["ts"].duplicated().any():
+            raise ValueError(f"{station}: duplicate timestamps")
+        frame = frame.set_index("ts").sort_index()
         expected = set(STATION_LOAD_POINTS[station]) | set(STATION_WEATHER_POINTS[station])
         missing_columns = sorted(expected - set(frame.columns))
         if missing_columns:
@@ -107,7 +110,7 @@ def clean_value(value: object) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    return number if pd.notna(number) else None
+    return number if math.isfinite(number) else None
 
 
 def main() -> None:

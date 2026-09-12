@@ -12,6 +12,12 @@ venv/
 env/
 .idea/
 .vscode/
+.env
+.env.*
+!.env.example
 
 # Real CSVs are kept only for the private GitHub integration test.
 tests/fixtures/
+
+# Generated local/CI reports are artifacts, not source files.
+tests/results/

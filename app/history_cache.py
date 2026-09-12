@@ -7,6 +7,7 @@ import pandas as pd
 
 from input_adapter import InputAdapter, InputValidationError, ParsedInput
 from models.utils import time_feature_frame
+from models.causal_state import add_causal_states, seed_columns
 
 
 class HistoryNotReadyError(ValueError):
@@ -21,47 +22,93 @@ class HistoryNotReadyError(ValueError):
 class RealHistoryCache:
     """Merge overlapping one-day requests and retain recent real history."""
 
-    def __init__(self, cache_path: Path, required_points: int = 672, retention_points: int = 768):
+    def __init__(self, cache_path: Path, required_points: int = 672, retention_points: int = 768,
+                 state_centers: dict | None = None, model_name: str = "seven_station_2025"):
         self.cache_path = Path(cache_path)
         self.required_points = required_points
         self.retention_points = max(retention_points, required_points)
         self.adapter = InputAdapter()
+        self.state_centers = state_centers or {}
+        self.model_name = model_name
 
     def merge(self, parsed: ParsedInput) -> tuple[pd.DataFrame, dict]:
         incoming = parsed.frame[["ts"] + parsed.point_columns + self._source_valid_columns()].copy()
         incoming["ts"] = pd.to_datetime(incoming["ts"])
 
+        seed = None
+        cached = None
         if self.cache_path.exists():
             cached = pd.read_csv(self.cache_path)
             cached["ts"] = pd.to_datetime(cached["ts"])
+            if "__model" not in cached or not cached["__model"].eq(self.model_name).all():
+                raise InputValidationError("历史缓存属于其他模型，请为本版本使用独立的空缓存目录")
+            if incoming["ts"].iloc[-1] < cached["ts"].iloc[-1]:
+                raise InputValidationError("不接受早于缓存末端的旧批次，避免使用未来历史预测过去")
+            if incoming["ts"].iloc[0] < cached["ts"].iloc[0]:
+                raise InputValidationError("请求早于保留的缓存范围，请使用独立缓存进行历史回放")
+            if self.state_centers:
+                required = [c for station in self.state_centers for c in seed_columns(station)]
+                if any(c not in cached for c in required):
+                    raise InputValidationError("缓存缺少当前版本状态上下文，请使用独立的空缓存目录")
+                seed = cached.iloc[0]
             combined = pd.concat([cached, incoming], ignore_index=True, sort=False)
         else:
             combined = incoming
 
-        point_columns = parsed.point_columns
         source_columns = self._source_valid_columns()
-        combined = combined.sort_values("ts").reset_index(drop=True)
-        # For overlapping requests, a missing field must not erase an already
-        # stored real value at the same timestamp. Keep the latest non-null
-        # point value, while source-valid flags use the newest request.
-        grouped_points = combined.groupby("ts", as_index=False)[point_columns].last()
-        grouped_source = combined.groupby("ts", as_index=False)[source_columns].last()
-        combined = pd.merge(grouped_points, grouped_source, on="ts", how="left")
-        combined = combined.tail(self.retention_points).reset_index(drop=True)
         load_columns, weather_columns = self.adapter.point_columns()
+        weather_carry_columns = [f"__weather_before::{column}" for column in weather_columns]
+        weather_seed = pd.Series(float("nan"), index=weather_columns)
+        if cached is not None:
+            if any(column not in cached for column in weather_carry_columns):
+                raise InputValidationError("缓存缺少温湿度上下文，请使用本版本独立的空缓存目录")
+            weather_seed[:] = cached.iloc[0][weather_carry_columns].to_numpy(dtype=float)
+        combined = combined.sort_values("ts", kind="stable").reset_index(drop=True)
+        # Each request is a complete seven-station snapshot. A newer missing
+        # power measurement means zero, never yesterday's or a cached power.
+        latest = combined.drop_duplicates("ts", keep="last")[["ts"] + load_columns + source_columns]
+        weather = combined.groupby("ts", as_index=False)[weather_columns].last()
+        combined = pd.merge(latest, weather, on="ts", how="left").sort_values("ts").reset_index(drop=True)
+        filled = combined.copy()
+        filled.loc[0, weather_columns] = filled.loc[0, weather_columns].astype(float).fillna(weather_seed)
         fill_quality = self.adapter.fill_missing_points(
-            combined,
+            filled,
             load_columns,
             weather_columns,
-            allow_leading_backfill=not self.cache_path.exists(),
+            allow_leading_backfill=False,
         )
+        fill_quality["missingWeatherValues"] = int(combined[weather_columns].isna().sum().sum())
+        fill_quality["forwardFilledWeatherValues"] = int((combined[weather_columns].isna() & filled[weather_columns].notna()).sum().sum())
+        # Persist observations separately from fills so a corrected past weather
+        # value also updates the later missing points, including after restart.
+        prior_weather = filled[weather_columns].shift(1)
+        prior_weather.iloc[0] = weather_seed.to_numpy()
+        combined[weather_carry_columns] = prior_weather.to_numpy()
+        model_frame = self.adapter.build_model_frame(filled)
+        if self.state_centers:
+            model_frame = add_causal_states(model_frame, self.state_centers, seed=seed)
+            carry_columns = [c for station in self.state_centers for c in seed_columns(station)]
+            combined[carry_columns] = model_frame[carry_columns]
+        combined["__model"] = self.model_name
+        combined = combined.tail(self.retention_points).reset_index(drop=True)
+        model_frame = model_frame.tail(self.retention_points).reset_index(drop=True)
+        filled = filled.tail(self.retention_points).reset_index(drop=True)
 
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.cache_path.with_suffix(".tmp")
         combined.to_csv(temporary, index=False, encoding="utf-8-sig")
         temporary.replace(self.cache_path)
 
-        history, status = self._latest_continuous_history(combined)
+        history, status = self._latest_continuous_history(filled)
+        # Unknown leading weather is not backfilled from future measurements.
+        # Only the continuous suffix with all weather inputs can warm the model.
+        weather_missing = history[weather_columns].isna().any(axis=1)
+        if weather_missing.any():
+            history = history.loc[history.index > weather_missing[weather_missing].index[-1]]
+            status["continuousPoints"] = int(len(history))
+            status["ready"] = len(history) >= self.required_points
+            status["continuousStart"] = None if history.empty else str(history["ts"].iloc[0])
+            status["waitingForWeatherHistory"] = True
         status.update(
             {
                 "cacheFile": str(self.cache_path),
@@ -74,10 +121,7 @@ class RealHistoryCache:
         if len(history) < self.required_points:
             raise HistoryNotReadyError(status)
 
-        # Keep the extra retained context for station-state smoothing. The
-        # predictor will take the latest required_points after state features
-        # are calculated exactly as in offline preprocessing.
-        model_frame = self.adapter.build_model_frame(history.reset_index(drop=True))
+        model_frame = model_frame.loc[history.index].reset_index(drop=True)
         time_features = time_feature_frame(model_frame["ts"])
         for column in time_features.columns:
             model_frame[column] = time_features[column].to_numpy(dtype=float)

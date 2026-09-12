@@ -92,6 +92,9 @@ class ForecastHandler(BaseHTTPRequestHandler):
 
         try:
             payload = json.loads(self.latest_json.read_text(encoding="utf-8"))
+            if payload.get("model") != self.predictor.model_name:
+                self.send_json(404, {"code": 404, "msg": "当前模型尚未产生预测结果", "data": []})
+                return
             self.send_json(200, payload)
         except Exception as exc:
             self.send_json(500, {"code": 500, "msg": f"latest_result_unavailable: {exc}", "data": []})

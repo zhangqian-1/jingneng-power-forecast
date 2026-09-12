@@ -1,612 +1,614 @@
 {
   "code": 200,
   "msg": "success",
-  "batchTime": "202512312345",
-  "generatedAt": "2026-09-01T21:27:32+08:00",
-  "model": "StationAttentionFusion_TrendDetail_deployable_v2",
+  "batchTime": "202510192345",
+  "generatedAt": "2026-09-10T14:20:46+08:00",
+  "model": "StationAttentionFusion_TrendDetail_7station_2025_v1",
   "accuracyBasis": "historical_test_error_by_forecast_horizon",
-  "testRMSE": 285.4938,
+  "testRMSE": 357.0757,
   "inputQuality": {
-    "missingValuePolicy": "previous_value_after_history_merge",
+    "missingValuePolicy": "power_zero_weather_causal_forward_fill",
     "zeroValuePolicy": "zero_is_valid_measurement",
-    "submittedMissingLoadValues": 0,
-    "submittedMissingWeatherValues": 0
+    "submittedMissingLoadValues": 97,
+    "submittedMissingWeatherValues": 194
   },
   "historyCache": {
     "ready": true,
-    "continuousPoints": 672,
+    "continuousPoints": 768,
     "requiredPoints": 672,
-    "continuousStart": "2025-12-25 00:00:00",
-    "continuousEnd": "2025-12-31 23:45:00",
-      "cacheFile": "runtime/real_history_cache.csv",
-    "cachedPoints": 672,
-    "cacheStart": "2025-12-25 00:00:00",
-    "cacheEnd": "2025-12-31 23:45:00",
+    "continuousStart": "2025-10-12 00:00:00",
+    "continuousEnd": "2025-10-19 23:45:00",
+    "cacheFile": "C:\\Users\\Wangying\\AppData\\Local\\Temp\\jingneng-migration-ii4tox66\\history.csv",
+    "cachedPoints": 768,
+    "cacheStart": "2025-10-12 00:00:00",
+    "cacheEnd": "2025-10-19 23:45:00",
     "cacheFillQuality": {
-      "missingValuePolicy": "previous_value_forward_fill",
+      "missingValuePolicy": "power_zero_weather_causal_forward_fill",
       "zeroValuePolicy": "zero_is_valid_measurement",
-      "missingLoadValues": 0,
-      "missingWeatherValues": 0,
-      "forwardFilledValues": 0,
+      "negativeValuePolicy": "retain_finite_measurement",
+      "missingLoadValues": 2232,
+      "missingWeatherValues": 2024,
+      "zeroFilledLoadValues": 2232,
+      "forwardFilledWeatherValues": 2024,
       "leadingValuesInitializedFromFirstRealValue": 0
     }
   },
   "data": [
     {
-      "predictedTime": "202601010000",
+      "predictedTime": "202510200000",
       "timeSeries": 1,
-      "predictedPower": 3382.7728,
-      "accuracy": "96.42%"
+      "predictedPower": 1128.4165,
+      "accuracy": "94.82%"
     },
     {
-      "predictedTime": "202601010015",
+      "predictedTime": "202510200015",
       "timeSeries": 2,
-      "predictedPower": 3293.556,
-      "accuracy": "96.08%"
+      "predictedPower": 1097.0032,
+      "accuracy": "93.74%"
     },
     {
-      "predictedTime": "202601010030",
+      "predictedTime": "202510200030",
       "timeSeries": 3,
-      "predictedPower": 3374.8186,
-      "accuracy": "95.69%"
+      "predictedPower": 1094.0534,
+      "accuracy": "93.19%"
     },
     {
-      "predictedTime": "202601010045",
+      "predictedTime": "202510200045",
       "timeSeries": 4,
-      "predictedPower": 3356.8912,
-      "accuracy": "94.72%"
+      "predictedPower": 1087.6491,
+      "accuracy": "92.93%"
     },
     {
-      "predictedTime": "202601010100",
+      "predictedTime": "202510200100",
       "timeSeries": 5,
-      "predictedPower": 3395.1624,
-      "accuracy": "94.66%"
+      "predictedPower": 1093.46,
+      "accuracy": "92.83%"
     },
     {
-      "predictedTime": "202601010115",
+      "predictedTime": "202510200115",
       "timeSeries": 6,
-      "predictedPower": 3397.3641,
-      "accuracy": "94.23%"
+      "predictedPower": 1096.3261,
+      "accuracy": "93.00%"
     },
     {
-      "predictedTime": "202601010130",
+      "predictedTime": "202510200130",
       "timeSeries": 7,
-      "predictedPower": 3353.8592,
-      "accuracy": "94.55%"
-    },
-    {
-      "predictedTime": "202601010145",
-      "timeSeries": 8,
-      "predictedPower": 3290.5513,
-      "accuracy": "93.94%"
-    },
-    {
-      "predictedTime": "202601010200",
-      "timeSeries": 9,
-      "predictedPower": 3279.88,
-      "accuracy": "93.05%"
-    },
-    {
-      "predictedTime": "202601010215",
-      "timeSeries": 10,
-      "predictedPower": 3304.2903,
-      "accuracy": "93.94%"
-    },
-    {
-      "predictedTime": "202601010230",
-      "timeSeries": 11,
-      "predictedPower": 3201.5259,
-      "accuracy": "94.20%"
-    },
-    {
-      "predictedTime": "202601010245",
-      "timeSeries": 12,
-      "predictedPower": 3137.5814,
-      "accuracy": "93.82%"
-    },
-    {
-      "predictedTime": "202601010300",
-      "timeSeries": 13,
-      "predictedPower": 3375.039,
-      "accuracy": "94.27%"
-    },
-    {
-      "predictedTime": "202601010315",
-      "timeSeries": 14,
-      "predictedPower": 3444.7144,
-      "accuracy": "94.78%"
-    },
-    {
-      "predictedTime": "202601010330",
-      "timeSeries": 15,
-      "predictedPower": 3447.0962,
-      "accuracy": "94.83%"
-    },
-    {
-      "predictedTime": "202601010345",
-      "timeSeries": 16,
-      "predictedPower": 3495.4198,
-      "accuracy": "94.41%"
-    },
-    {
-      "predictedTime": "202601010400",
-      "timeSeries": 17,
-      "predictedPower": 3493.74,
-      "accuracy": "94.16%"
-    },
-    {
-      "predictedTime": "202601010415",
-      "timeSeries": 18,
-      "predictedPower": 3463.9322,
-      "accuracy": "94.28%"
-    },
-    {
-      "predictedTime": "202601010430",
-      "timeSeries": 19,
-      "predictedPower": 3456.003,
-      "accuracy": "94.00%"
-    },
-    {
-      "predictedTime": "202601010445",
-      "timeSeries": 20,
-      "predictedPower": 3421.7196,
-      "accuracy": "93.91%"
-    },
-    {
-      "predictedTime": "202601010500",
-      "timeSeries": 21,
-      "predictedPower": 3479.7999,
-      "accuracy": "93.65%"
-    },
-    {
-      "predictedTime": "202601010515",
-      "timeSeries": 22,
-      "predictedPower": 3531.4685,
-      "accuracy": "93.46%"
-    },
-    {
-      "predictedTime": "202601010530",
-      "timeSeries": 23,
-      "predictedPower": 3560.2907,
-      "accuracy": "93.84%"
-    },
-    {
-      "predictedTime": "202601010545",
-      "timeSeries": 24,
-      "predictedPower": 3571.1173,
-      "accuracy": "93.53%"
-    },
-    {
-      "predictedTime": "202601010600",
-      "timeSeries": 25,
-      "predictedPower": 3608.048,
-      "accuracy": "93.77%"
-    },
-    {
-      "predictedTime": "202601010615",
-      "timeSeries": 26,
-      "predictedPower": 3654.9645,
-      "accuracy": "94.23%"
-    },
-    {
-      "predictedTime": "202601010630",
-      "timeSeries": 27,
-      "predictedPower": 3721.6658,
-      "accuracy": "94.54%"
-    },
-    {
-      "predictedTime": "202601010645",
-      "timeSeries": 28,
-      "predictedPower": 3695.3689,
-      "accuracy": "93.83%"
-    },
-    {
-      "predictedTime": "202601010700",
-      "timeSeries": 29,
-      "predictedPower": 3614.6897,
-      "accuracy": "94.07%"
-    },
-    {
-      "predictedTime": "202601010715",
-      "timeSeries": 30,
-      "predictedPower": 3551.9129,
-      "accuracy": "93.12%"
-    },
-    {
-      "predictedTime": "202601010730",
-      "timeSeries": 31,
-      "predictedPower": 3535.3742,
-      "accuracy": "93.24%"
-    },
-    {
-      "predictedTime": "202601010745",
-      "timeSeries": 32,
-      "predictedPower": 3484.5621,
-      "accuracy": "93.57%"
-    },
-    {
-      "predictedTime": "202601010800",
-      "timeSeries": 33,
-      "predictedPower": 3479.3262,
-      "accuracy": "93.41%"
-    },
-    {
-      "predictedTime": "202601010815",
-      "timeSeries": 34,
-      "predictedPower": 3524.0197,
-      "accuracy": "93.08%"
-    },
-    {
-      "predictedTime": "202601010830",
-      "timeSeries": 35,
-      "predictedPower": 3543.0152,
-      "accuracy": "93.28%"
-    },
-    {
-      "predictedTime": "202601010845",
-      "timeSeries": 36,
-      "predictedPower": 3252.4807,
-      "accuracy": "93.45%"
-    },
-    {
-      "predictedTime": "202601010900",
-      "timeSeries": 37,
-      "predictedPower": 3078.9694,
-      "accuracy": "92.30%"
-    },
-    {
-      "predictedTime": "202601010915",
-      "timeSeries": 38,
-      "predictedPower": 3138.4088,
-      "accuracy": "92.18%"
-    },
-    {
-      "predictedTime": "202601010930",
-      "timeSeries": 39,
-      "predictedPower": 3288.9125,
-      "accuracy": "92.66%"
-    },
-    {
-      "predictedTime": "202601010945",
-      "timeSeries": 40,
-      "predictedPower": 3270.9356,
-      "accuracy": "93.19%"
-    },
-    {
-      "predictedTime": "202601011000",
-      "timeSeries": 41,
-      "predictedPower": 3403.4111,
-      "accuracy": "93.67%"
-    },
-    {
-      "predictedTime": "202601011015",
-      "timeSeries": 42,
-      "predictedPower": 3375.5947,
-      "accuracy": "94.05%"
-    },
-    {
-      "predictedTime": "202601011030",
-      "timeSeries": 43,
-      "predictedPower": 3258.266,
-      "accuracy": "93.28%"
-    },
-    {
-      "predictedTime": "202601011045",
-      "timeSeries": 44,
-      "predictedPower": 3135.4999,
-      "accuracy": "93.05%"
-    },
-    {
-      "predictedTime": "202601011100",
-      "timeSeries": 45,
-      "predictedPower": 3191.4075,
-      "accuracy": "92.60%"
-    },
-    {
-      "predictedTime": "202601011115",
-      "timeSeries": 46,
-      "predictedPower": 3288.1934,
-      "accuracy": "91.80%"
-    },
-    {
-      "predictedTime": "202601011130",
-      "timeSeries": 47,
-      "predictedPower": 3137.9169,
-      "accuracy": "92.49%"
-    },
-    {
-      "predictedTime": "202601011145",
-      "timeSeries": 48,
-      "predictedPower": 3085.4707,
-      "accuracy": "92.52%"
-    },
-    {
-      "predictedTime": "202601011200",
-      "timeSeries": 49,
-      "predictedPower": 3121.1292,
-      "accuracy": "93.19%"
-    },
-    {
-      "predictedTime": "202601011215",
-      "timeSeries": 50,
-      "predictedPower": 3081.0256,
+      "predictedPower": 1065.867,
       "accuracy": "93.06%"
     },
     {
-      "predictedTime": "202601011230",
-      "timeSeries": 51,
-      "predictedPower": 3065.3807,
-      "accuracy": "93.29%"
+      "predictedTime": "202510200145",
+      "timeSeries": 8,
+      "predictedPower": 1058.6835,
+      "accuracy": "92.01%"
     },
     {
-      "predictedTime": "202601011245",
-      "timeSeries": 52,
-      "predictedPower": 3049.8158,
-      "accuracy": "92.59%"
+      "predictedTime": "202510200200",
+      "timeSeries": 9,
+      "predictedPower": 1067.321,
+      "accuracy": "93.35%"
     },
     {
-      "predictedTime": "202601011300",
-      "timeSeries": 53,
-      "predictedPower": 3163.6434,
-      "accuracy": "92.25%"
+      "predictedTime": "202510200215",
+      "timeSeries": 10,
+      "predictedPower": 1056.2129,
+      "accuracy": "92.81%"
     },
     {
-      "predictedTime": "202601011315",
-      "timeSeries": 54,
-      "predictedPower": 3325.5508,
-      "accuracy": "92.13%"
+      "predictedTime": "202510200230",
+      "timeSeries": 11,
+      "predictedPower": 1080.9326,
+      "accuracy": "92.36%"
     },
     {
-      "predictedTime": "202601011330",
-      "timeSeries": 55,
-      "predictedPower": 3347.6896,
-      "accuracy": "92.06%"
+      "predictedTime": "202510200245",
+      "timeSeries": 12,
+      "predictedPower": 1064.2279,
+      "accuracy": "92.05%"
     },
     {
-      "predictedTime": "202601011345",
-      "timeSeries": 56,
-      "predictedPower": 3303.0761,
-      "accuracy": "91.49%"
+      "predictedTime": "202510200300",
+      "timeSeries": 13,
+      "predictedPower": 1086.9065,
+      "accuracy": "91.14%"
     },
     {
-      "predictedTime": "202601011400",
-      "timeSeries": 57,
-      "predictedPower": 3189.7592,
-      "accuracy": "92.57%"
-    },
-    {
-      "predictedTime": "202601011415",
-      "timeSeries": 58,
-      "predictedPower": 3285.2693,
-      "accuracy": "92.42%"
-    },
-    {
-      "predictedTime": "202601011430",
-      "timeSeries": 59,
-      "predictedPower": 3239.0436,
-      "accuracy": "92.64%"
-    },
-    {
-      "predictedTime": "202601011445",
-      "timeSeries": 60,
-      "predictedPower": 3246.1831,
-      "accuracy": "93.11%"
-    },
-    {
-      "predictedTime": "202601011500",
-      "timeSeries": 61,
-      "predictedPower": 3348.635,
-      "accuracy": "92.35%"
-    },
-    {
-      "predictedTime": "202601011515",
-      "timeSeries": 62,
-      "predictedPower": 3419.3419,
-      "accuracy": "92.23%"
-    },
-    {
-      "predictedTime": "202601011530",
-      "timeSeries": 63,
-      "predictedPower": 3540.0471,
-      "accuracy": "92.42%"
-    },
-    {
-      "predictedTime": "202601011545",
-      "timeSeries": 64,
-      "predictedPower": 3607.9855,
-      "accuracy": "91.76%"
-    },
-    {
-      "predictedTime": "202601011600",
-      "timeSeries": 65,
-      "predictedPower": 3773.4684,
-      "accuracy": "92.19%"
-    },
-    {
-      "predictedTime": "202601011615",
-      "timeSeries": 66,
-      "predictedPower": 3977.2066,
-      "accuracy": "92.43%"
-    },
-    {
-      "predictedTime": "202601011630",
-      "timeSeries": 67,
-      "predictedPower": 4037.2895,
-      "accuracy": "92.34%"
-    },
-    {
-      "predictedTime": "202601011645",
-      "timeSeries": 68,
-      "predictedPower": 4044.1697,
-      "accuracy": "92.41%"
-    },
-    {
-      "predictedTime": "202601011700",
-      "timeSeries": 69,
-      "predictedPower": 3920.8633,
-      "accuracy": "92.56%"
-    },
-    {
-      "predictedTime": "202601011715",
-      "timeSeries": 70,
-      "predictedPower": 3821.4214,
-      "accuracy": "92.64%"
-    },
-    {
-      "predictedTime": "202601011730",
-      "timeSeries": 71,
-      "predictedPower": 3774.5586,
-      "accuracy": "93.13%"
-    },
-    {
-      "predictedTime": "202601011745",
-      "timeSeries": 72,
-      "predictedPower": 3755.5835,
-      "accuracy": "92.69%"
-    },
-    {
-      "predictedTime": "202601011800",
-      "timeSeries": 73,
-      "predictedPower": 3720.4609,
-      "accuracy": "93.08%"
-    },
-    {
-      "predictedTime": "202601011815",
-      "timeSeries": 74,
-      "predictedPower": 3707.4097,
-      "accuracy": "92.70%"
-    },
-    {
-      "predictedTime": "202601011830",
-      "timeSeries": 75,
-      "predictedPower": 3706.9806,
-      "accuracy": "92.77%"
-    },
-    {
-      "predictedTime": "202601011845",
-      "timeSeries": 76,
-      "predictedPower": 3500.9877,
-      "accuracy": "92.88%"
-    },
-    {
-      "predictedTime": "202601011900",
-      "timeSeries": 77,
-      "predictedPower": 3373.5544,
-      "accuracy": "92.35%"
-    },
-    {
-      "predictedTime": "202601011915",
-      "timeSeries": 78,
-      "predictedPower": 3379.6742,
-      "accuracy": "91.42%"
-    },
-    {
-      "predictedTime": "202601011930",
-      "timeSeries": 79,
-      "predictedPower": 3493.1084,
-      "accuracy": "92.26%"
-    },
-    {
-      "predictedTime": "202601011945",
-      "timeSeries": 80,
-      "predictedPower": 3503.0655,
-      "accuracy": "92.70%"
-    },
-    {
-      "predictedTime": "202601012000",
-      "timeSeries": 81,
-      "predictedPower": 3722.8349,
-      "accuracy": "91.65%"
-    },
-    {
-      "predictedTime": "202601012015",
-      "timeSeries": 82,
-      "predictedPower": 3694.2641,
-      "accuracy": "93.02%"
-    },
-    {
-      "predictedTime": "202601012030",
-      "timeSeries": 83,
-      "predictedPower": 3526.8349,
-      "accuracy": "92.18%"
-    },
-    {
-      "predictedTime": "202601012045",
-      "timeSeries": 84,
-      "predictedPower": 3414.4961,
-      "accuracy": "91.68%"
-    },
-    {
-      "predictedTime": "202601012100",
-      "timeSeries": 85,
-      "predictedPower": 3354.6625,
-      "accuracy": "91.44%"
-    },
-    {
-      "predictedTime": "202601012115",
-      "timeSeries": 86,
-      "predictedPower": 3313.4427,
-      "accuracy": "90.92%"
-    },
-    {
-      "predictedTime": "202601012130",
-      "timeSeries": 87,
-      "predictedPower": 3320.4213,
-      "accuracy": "91.19%"
-    },
-    {
-      "predictedTime": "202601012145",
-      "timeSeries": 88,
-      "predictedPower": 3280.4842,
-      "accuracy": "90.73%"
-    },
-    {
-      "predictedTime": "202601012200",
-      "timeSeries": 89,
-      "predictedPower": 3345.3196,
-      "accuracy": "91.15%"
-    },
-    {
-      "predictedTime": "202601012215",
-      "timeSeries": 90,
-      "predictedPower": 3287.7678,
+      "predictedTime": "202510200315",
+      "timeSeries": 14,
+      "predictedPower": 1104.4713,
       "accuracy": "91.85%"
     },
     {
-      "predictedTime": "202601012230",
+      "predictedTime": "202510200330",
+      "timeSeries": 15,
+      "predictedPower": 1087.2097,
+      "accuracy": "92.01%"
+    },
+    {
+      "predictedTime": "202510200345",
+      "timeSeries": 16,
+      "predictedPower": 1053.5872,
+      "accuracy": "91.51%"
+    },
+    {
+      "predictedTime": "202510200400",
+      "timeSeries": 17,
+      "predictedPower": 1039.9893,
+      "accuracy": "91.02%"
+    },
+    {
+      "predictedTime": "202510200415",
+      "timeSeries": 18,
+      "predictedPower": 1034.9575,
+      "accuracy": "91.76%"
+    },
+    {
+      "predictedTime": "202510200430",
+      "timeSeries": 19,
+      "predictedPower": 1073.8068,
+      "accuracy": "90.90%"
+    },
+    {
+      "predictedTime": "202510200445",
+      "timeSeries": 20,
+      "predictedPower": 1074.0338,
+      "accuracy": "91.15%"
+    },
+    {
+      "predictedTime": "202510200500",
+      "timeSeries": 21,
+      "predictedPower": 1074.1374,
+      "accuracy": "92.12%"
+    },
+    {
+      "predictedTime": "202510200515",
+      "timeSeries": 22,
+      "predictedPower": 1073.6335,
+      "accuracy": "91.46%"
+    },
+    {
+      "predictedTime": "202510200530",
+      "timeSeries": 23,
+      "predictedPower": 1046.576,
+      "accuracy": "91.74%"
+    },
+    {
+      "predictedTime": "202510200545",
+      "timeSeries": 24,
+      "predictedPower": 1045.957,
+      "accuracy": "91.13%"
+    },
+    {
+      "predictedTime": "202510200600",
+      "timeSeries": 25,
+      "predictedPower": 1031.3012,
+      "accuracy": "91.65%"
+    },
+    {
+      "predictedTime": "202510200615",
+      "timeSeries": 26,
+      "predictedPower": 1073.7263,
+      "accuracy": "90.41%"
+    },
+    {
+      "predictedTime": "202510200630",
+      "timeSeries": 27,
+      "predictedPower": 1092.3334,
+      "accuracy": "89.94%"
+    },
+    {
+      "predictedTime": "202510200645",
+      "timeSeries": 28,
+      "predictedPower": 1119.2168,
+      "accuracy": "89.77%"
+    },
+    {
+      "predictedTime": "202510200700",
+      "timeSeries": 29,
+      "predictedPower": 1088.0344,
+      "accuracy": "90.39%"
+    },
+    {
+      "predictedTime": "202510200715",
+      "timeSeries": 30,
+      "predictedPower": 1117.5498,
+      "accuracy": "89.75%"
+    },
+    {
+      "predictedTime": "202510200730",
+      "timeSeries": 31,
+      "predictedPower": 1096.6893,
+      "accuracy": "90.30%"
+    },
+    {
+      "predictedTime": "202510200745",
+      "timeSeries": 32,
+      "predictedPower": 1091.7264,
+      "accuracy": "90.48%"
+    },
+    {
+      "predictedTime": "202510200800",
+      "timeSeries": 33,
+      "predictedPower": 1067.2718,
+      "accuracy": "89.29%"
+    },
+    {
+      "predictedTime": "202510200815",
+      "timeSeries": 34,
+      "predictedPower": 1060.8023,
+      "accuracy": "90.36%"
+    },
+    {
+      "predictedTime": "202510200830",
+      "timeSeries": 35,
+      "predictedPower": 1091.553,
+      "accuracy": "89.37%"
+    },
+    {
+      "predictedTime": "202510200845",
+      "timeSeries": 36,
+      "predictedPower": 1124.509,
+      "accuracy": "88.85%"
+    },
+    {
+      "predictedTime": "202510200900",
+      "timeSeries": 37,
+      "predictedPower": 1060.4066,
+      "accuracy": "88.27%"
+    },
+    {
+      "predictedTime": "202510200915",
+      "timeSeries": 38,
+      "predictedPower": 1091.6562,
+      "accuracy": "88.73%"
+    },
+    {
+      "predictedTime": "202510200930",
+      "timeSeries": 39,
+      "predictedPower": 1098.0891,
+      "accuracy": "88.76%"
+    },
+    {
+      "predictedTime": "202510200945",
+      "timeSeries": 40,
+      "predictedPower": 1102.5586,
+      "accuracy": "89.91%"
+    },
+    {
+      "predictedTime": "202510201000",
+      "timeSeries": 41,
+      "predictedPower": 1091.0889,
+      "accuracy": "87.90%"
+    },
+    {
+      "predictedTime": "202510201015",
+      "timeSeries": 42,
+      "predictedPower": 1089.4858,
+      "accuracy": "87.69%"
+    },
+    {
+      "predictedTime": "202510201030",
+      "timeSeries": 43,
+      "predictedPower": 1070.094,
+      "accuracy": "87.57%"
+    },
+    {
+      "predictedTime": "202510201045",
+      "timeSeries": 44,
+      "predictedPower": 1013.7676,
+      "accuracy": "86.69%"
+    },
+    {
+      "predictedTime": "202510201100",
+      "timeSeries": 45,
+      "predictedPower": 1044.8655,
+      "accuracy": "86.47%"
+    },
+    {
+      "predictedTime": "202510201115",
+      "timeSeries": 46,
+      "predictedPower": 1024.0033,
+      "accuracy": "87.63%"
+    },
+    {
+      "predictedTime": "202510201130",
+      "timeSeries": 47,
+      "predictedPower": 989.9351,
+      "accuracy": "88.08%"
+    },
+    {
+      "predictedTime": "202510201145",
+      "timeSeries": 48,
+      "predictedPower": 1019.2015,
+      "accuracy": "87.81%"
+    },
+    {
+      "predictedTime": "202510201200",
+      "timeSeries": 49,
+      "predictedPower": 1135.373,
+      "accuracy": "88.02%"
+    },
+    {
+      "predictedTime": "202510201215",
+      "timeSeries": 50,
+      "predictedPower": 1098.4253,
+      "accuracy": "87.50%"
+    },
+    {
+      "predictedTime": "202510201230",
+      "timeSeries": 51,
+      "predictedPower": 1090.5038,
+      "accuracy": "88.16%"
+    },
+    {
+      "predictedTime": "202510201245",
+      "timeSeries": 52,
+      "predictedPower": 1041.9406,
+      "accuracy": "88.54%"
+    },
+    {
+      "predictedTime": "202510201300",
+      "timeSeries": 53,
+      "predictedPower": 1110.6892,
+      "accuracy": "87.98%"
+    },
+    {
+      "predictedTime": "202510201315",
+      "timeSeries": 54,
+      "predictedPower": 1059.436,
+      "accuracy": "88.03%"
+    },
+    {
+      "predictedTime": "202510201330",
+      "timeSeries": 55,
+      "predictedPower": 1038.6171,
+      "accuracy": "88.26%"
+    },
+    {
+      "predictedTime": "202510201345",
+      "timeSeries": 56,
+      "predictedPower": 1069.6264,
+      "accuracy": "88.44%"
+    },
+    {
+      "predictedTime": "202510201400",
+      "timeSeries": 57,
+      "predictedPower": 1207.6444,
+      "accuracy": "87.77%"
+    },
+    {
+      "predictedTime": "202510201415",
+      "timeSeries": 58,
+      "predictedPower": 1289.2923,
+      "accuracy": "87.60%"
+    },
+    {
+      "predictedTime": "202510201430",
+      "timeSeries": 59,
+      "predictedPower": 1423.7214,
+      "accuracy": "87.24%"
+    },
+    {
+      "predictedTime": "202510201445",
+      "timeSeries": 60,
+      "predictedPower": 1398.9579,
+      "accuracy": "88.09%"
+    },
+    {
+      "predictedTime": "202510201500",
+      "timeSeries": 61,
+      "predictedPower": 1626.4806,
+      "accuracy": "88.85%"
+    },
+    {
+      "predictedTime": "202510201515",
+      "timeSeries": 62,
+      "predictedPower": 1624.5834,
+      "accuracy": "89.64%"
+    },
+    {
+      "predictedTime": "202510201530",
+      "timeSeries": 63,
+      "predictedPower": 1487.9083,
+      "accuracy": "88.52%"
+    },
+    {
+      "predictedTime": "202510201545",
+      "timeSeries": 64,
+      "predictedPower": 1405.9714,
+      "accuracy": "88.28%"
+    },
+    {
+      "predictedTime": "202510201600",
+      "timeSeries": 65,
+      "predictedPower": 1563.1556,
+      "accuracy": "88.27%"
+    },
+    {
+      "predictedTime": "202510201615",
+      "timeSeries": 66,
+      "predictedPower": 1605.5322,
+      "accuracy": "86.25%"
+    },
+    {
+      "predictedTime": "202510201630",
+      "timeSeries": 67,
+      "predictedPower": 1579.796,
+      "accuracy": "85.11%"
+    },
+    {
+      "predictedTime": "202510201645",
+      "timeSeries": 68,
+      "predictedPower": 1474.614,
+      "accuracy": "85.97%"
+    },
+    {
+      "predictedTime": "202510201700",
+      "timeSeries": 69,
+      "predictedPower": 1479.1789,
+      "accuracy": "86.31%"
+    },
+    {
+      "predictedTime": "202510201715",
+      "timeSeries": 70,
+      "predictedPower": 1539.2618,
+      "accuracy": "86.47%"
+    },
+    {
+      "predictedTime": "202510201730",
+      "timeSeries": 71,
+      "predictedPower": 1529.0272,
+      "accuracy": "86.85%"
+    },
+    {
+      "predictedTime": "202510201745",
+      "timeSeries": 72,
+      "predictedPower": 1646.9481,
+      "accuracy": "87.53%"
+    },
+    {
+      "predictedTime": "202510201800",
+      "timeSeries": 73,
+      "predictedPower": 1649.461,
+      "accuracy": "87.79%"
+    },
+    {
+      "predictedTime": "202510201815",
+      "timeSeries": 74,
+      "predictedPower": 1640.3484,
+      "accuracy": "87.52%"
+    },
+    {
+      "predictedTime": "202510201830",
+      "timeSeries": 75,
+      "predictedPower": 1630.1968,
+      "accuracy": "87.00%"
+    },
+    {
+      "predictedTime": "202510201845",
+      "timeSeries": 76,
+      "predictedPower": 1613.0305,
+      "accuracy": "87.16%"
+    },
+    {
+      "predictedTime": "202510201900",
+      "timeSeries": 77,
+      "predictedPower": 1626.8643,
+      "accuracy": "85.14%"
+    },
+    {
+      "predictedTime": "202510201915",
+      "timeSeries": 78,
+      "predictedPower": 1624.0585,
+      "accuracy": "85.03%"
+    },
+    {
+      "predictedTime": "202510201930",
+      "timeSeries": 79,
+      "predictedPower": 1623.5165,
+      "accuracy": "85.93%"
+    },
+    {
+      "predictedTime": "202510201945",
+      "timeSeries": 80,
+      "predictedPower": 1619.9999,
+      "accuracy": "86.32%"
+    },
+    {
+      "predictedTime": "202510202000",
+      "timeSeries": 81,
+      "predictedPower": 1618.1203,
+      "accuracy": "86.45%"
+    },
+    {
+      "predictedTime": "202510202015",
+      "timeSeries": 82,
+      "predictedPower": 1534.0771,
+      "accuracy": "86.24%"
+    },
+    {
+      "predictedTime": "202510202030",
+      "timeSeries": 83,
+      "predictedPower": 1509.2538,
+      "accuracy": "86.65%"
+    },
+    {
+      "predictedTime": "202510202045",
+      "timeSeries": 84,
+      "predictedPower": 1471.4647,
+      "accuracy": "87.05%"
+    },
+    {
+      "predictedTime": "202510202100",
+      "timeSeries": 85,
+      "predictedPower": 1434.5699,
+      "accuracy": "87.37%"
+    },
+    {
+      "predictedTime": "202510202115",
+      "timeSeries": 86,
+      "predictedPower": 1491.7604,
+      "accuracy": "86.88%"
+    },
+    {
+      "predictedTime": "202510202130",
+      "timeSeries": 87,
+      "predictedPower": 1448.2198,
+      "accuracy": "88.01%"
+    },
+    {
+      "predictedTime": "202510202145",
+      "timeSeries": 88,
+      "predictedPower": 1387.4837,
+      "accuracy": "89.45%"
+    },
+    {
+      "predictedTime": "202510202200",
+      "timeSeries": 89,
+      "predictedPower": 1386.1871,
+      "accuracy": "88.40%"
+    },
+    {
+      "predictedTime": "202510202215",
+      "timeSeries": 90,
+      "predictedPower": 1333.8215,
+      "accuracy": "89.66%"
+    },
+    {
+      "predictedTime": "202510202230",
       "timeSeries": 91,
-      "predictedPower": 3272.6206,
-      "accuracy": "92.30%"
+      "predictedPower": 1186.8877,
+      "accuracy": "88.48%"
     },
     {
-      "predictedTime": "202601012245",
+      "predictedTime": "202510202245",
       "timeSeries": 92,
-      "predictedPower": 3269.9166,
-      "accuracy": "92.21%"
+      "predictedPower": 1104.8193,
+      "accuracy": "88.68%"
     },
     {
-      "predictedTime": "202601012300",
+      "predictedTime": "202510202300",
       "timeSeries": 93,
-      "predictedPower": 3340.8263,
-      "accuracy": "92.00%"
+      "predictedPower": 1121.1682,
+      "accuracy": "88.60%"
     },
     {
-      "predictedTime": "202601012315",
+      "predictedTime": "202510202315",
       "timeSeries": 94,
-      "predictedPower": 3359.3556,
-      "accuracy": "92.50%"
+      "predictedPower": 1095.8407,
+      "accuracy": "88.76%"
     },
     {
-      "predictedTime": "202601012330",
+      "predictedTime": "202510202330",
       "timeSeries": 95,
-      "predictedPower": 3384.4607,
-      "accuracy": "91.96%"
+      "predictedPower": 1034.3446,
+      "accuracy": "89.47%"
     },
     {
-      "predictedTime": "202601012345",
+      "predictedTime": "202510202345",
       "timeSeries": 96,
-      "predictedPower": 3349.6044,
-      "accuracy": "92.27%"
+      "predictedPower": 1076.6397,
+      "accuracy": "89.93%"
     }
   ]
 }
