@@ -2,13 +2,15 @@
 
 ## 1. 交给接收方什么
 
-启动服务需要经过测试的镜像地址（或镜像 tar）、[compose.yaml](../compose.yaml) 和填写好的 `.env`。接收方需安装并启动 Docker Engine，安装 Docker Compose 2.20+；不用另装 Python，也不用训练。对接说明和 JSON 样例从同一提交的源码包一并交接，不要只发启动配置。
+启动服务需要经过测试的镜像地址（或镜像 tar）、[compose.yaml](../compose.yaml) 和填写好的 `.env`。接收方需安装并启动 Docker Engine，安装 Docker Compose 2.20+；不用另装 Python，也不用训练。
+
+在 GitHub 完成构建、测试后，下载该次成功运行的 `offline-image-对应架构-...` 附件。它包含镜像本体 `image.tar.gz`、启动配置、填好镜像标签的 `.env`、本说明、接口说明、JSON 样例、`release.json` 和 `SHA256SUMS`。这才是可转交公司 GitLab 的离线制品；首页 `Code -> Download ZIP` 是源码，`container-checks-...` 是测试报告，都不能代替镜像包。
 
 镜像架构必须与服务器一致：`x86_64` 对应 `amd64`，`aarch64` 对应 `arm64`。Linux 服务器通常执行 `uname -m` 查看。运行内存和耗时以目标服务器实测为准。
 
 ## 2. 首次配置
 
-把 `compose.yaml` 放在固定部署目录，不要使用临时目录。使用 GitHub 成功构建产物中的 `delivery/release.env` 时，将它放在同目录并命名为 `.env`；也可以从 [.env.example](../.env.example) 创建 `.env`：
+把交付包解压到固定部署目录，不要使用临时目录。`offline-image-...` 已附带 `.env`，无需重新创建。只拿到构建报告中的 `delivery/release.env` 时，将它放在 `compose.yaml` 同目录并命名为 `.env`；自行配置时也可以从 [.env.example](../.env.example) 创建 `.env`：
 
 ```bash
 # Linux，仅首次执行，不覆盖已有配置
@@ -61,8 +63,10 @@ Windows PowerShell 用 `curl.exe`，修改监听地址或端口后同步修改�
 3. 重建容器，检查最近结果、历史缓存和重复预测仍一致。
 4. 使用另一个空缓存容器，回放 2025-10-20 至 12-31 的 73 天测试集，计算 MAPE；与当前离线参考相差超过 0.01 个百分点则停止发布。
 5. 通过后发布带架构、提交号和运行编号的新镜像标签，不覆盖旧 `v2/latest`。
+6. 导出镜像，删除执行器中的原镜像标签，再从导出文件重新导入；核对镜像 ID 一致，检查镜像没有旧模型、测试 CSV、文档、样例及运行缓存。
+7. 用重新导入的镜像启动空缓存容器，禁止拉取镜像，再做七日真实接口测试；结果与导出前一致后，生成可下载的离线交付包。
 
-到这次运行的 Summary 看镜像地址、摘要和实测 MAPE。Artifacts 中的 `container-checks-...` 保存日志、`release.json`、`delivery/compose.yaml`、`delivery/release.env` 和评分结果，**不含镜像 tar，也不是完整的接口交接资料**。失败运行也可能有日志附件，只有日志不代表发布成功。附件保留 14 天，正式交接需另行保存。镜像本身不含测试 CSV、文档、样例和测试缓存。
+到这次运行的 Summary 看镜像地址、摘要和实测 MAPE。Artifacts 中下载 `offline-image-...` 用于交付；`container-checks-...` 仅保存日志、评分和基础配置，不含镜像。以整次运行成功为准，失败运行有日志不代表封装成功。附件保留 14 天，正式交接需另行保存。交付包中的文档和 JSON 样例放在镜像文件外，不是容器运行依赖。
 
 **本地检查：** 配好 `.env` 后执行 `docker compose config --quiet`，不需要 Docker 引擎即可检查配置；它不能证明容器能运行。需要复测时，在有 Docker 的测试机使用独立目录、端口和项目名，运行 `tests/run_api_test.py`（七日接口）和 `tests/run_rolling_accuracy_test.py`（完整评分），不要向生产缓存回放历史测试数据。
 
@@ -73,13 +77,27 @@ Windows PowerShell 用 `curl.exe`，修改监听地址或端口后同步修改�
 | AMD64 / x86_64 | [构建 34685823509](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34685823509) | 10.8778240% |
 | ARM64 / aarch64 | [构建 34685907068](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34685907068) | 10.8778241% |
 
-从对应记录的 Summary 取得镜像地址、从附件取得 `delivery/release.env`，不要混用两种架构。镜像不包含测试 CSV、JSON 样例、文档或本地缓存。
+上表是首次容器验收记录，其旧附件不含镜像文件。要下载完整镜像交付包，选择新增导出功能后的成功运行，并确认存在 `offline-image-...` 附件；镜像和测试版本以该附件的 `release.json` 为准，不要混用两种架构。
 
 **目标服务器检查：** 拉取对应架构的同一个镜像，按第 3 节启动，再完成接口调用、缓存持久化和访问控制检查。GitHub 通过不替代目标服务器验收；目标服务器尚未实际部署，不能标记为已上线。
 
 ## 5. 离线交付与维护
 
-服务器不能访问镜像仓库时，在能取得该镜像的 Docker 机器上导出。以下 `完整镜像标签` 替换为成功构建记录里的实际值：
+**GitHub 下载后转交 GitLab：** 取得对应架构的 `offline-image-...` ZIP，交给对接方上传公司允许的 GitLab Generic Package Registry（制品库）或 Release 附件存储。镜像较大，不要直接 `git add` 到普通源码仓库；只上传源码不会同时上传镜像。上传后应按 `SHA256SUMS` 核对，不能用较早的配置 ZIP 或源码 ZIP 代替本交付包。
+
+**接收方运行：** 解压交付包后，Linux 在该目录执行：
+
+```bash
+sha256sum -c SHA256SUMS
+docker load -i image.tar.gz
+docker compose up -d --pull never --wait --wait-timeout 300
+```
+
+`.env` 已填写该镜像的标签，离线启动时保留标签，不改成仓库摘要地址。加载本地镜像无需访问 GitHub、无需登录 GHCR；Docker 和 Compose 仍需事先安装。需要其他机器调用时，按第 2 节配置监听地址及访问控制；导入镜像不会带入测试历史，首次仍需平台补传真实历史。Windows PowerShell 可用 `Get-FileHash -Algorithm SHA256 image.tar.gz` 核对 `release.json` 中的镜像文件校验值。
+
+如果接收方需要把镜像放进公司 Container Registry，可在导入后按公司提供的地址执行 `docker tag`、`docker push`，并同步修改服务器 `.env`；不需要重新训练或更改预测代码。
+
+**自行导出已有镜像：** 以下 `完整镜像标签` 替换为成功构建记录里的实际值：
 
 ```bash
 docker pull 完整镜像标签

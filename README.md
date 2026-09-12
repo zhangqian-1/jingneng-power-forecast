@@ -12,6 +12,8 @@
 
 ## 一条命令启动
 
+从 GitHub 成功运行的 Actions 页面下载 `offline-image-对应架构-...` 附件，才是含镜像本体的离线交付包；仓库首页的 `Code -> Download ZIP` 只是源码。离线包解压后已经有 `.env`，先执行 `docker load -i image.tar.gz` 导入经过测试的镜像，再运行下面的启动命令。交到公司 GitLab 时，大镜像包应放在对接方指定的制品库或发布附件，不直接提交到普通 Git 源码历史。
+
 服务器安装并启动 Docker 引擎、安装 Compose 2.20+ 后，使用 [compose.yaml](compose.yaml) 与填写好的 `.env`（模板见 [.env.example](.env.example)）。模板的镜像地址留空，须填入成功构建交付的镜像；这条命令是启动已有镜像，不是构建镜像。在同一目录执行：
 
 ```bash

@@ -1,0 +1,90 @@
+"""Assemble a downloadable image bundle after the CI import test succeeds."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import shutil
+
+
+IMAGE_FILE = "image.tar.gz"
+
+
+def sha256(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def build_delivery(root: Path, ci: Path, output: Path) -> dict:
+    root, ci, output = root.resolve(), ci.resolve(), output.resolve()
+    if output == root or output in root.parents:
+        raise ValueError("Delivery output cannot be the source root or its parent")
+    archive = output / IMAGE_FILE
+    if not archive.is_file() or archive.stat().st_size == 0:
+        raise ValueError("The exported image archive is missing or empty")
+    if {p.name for p in output.iterdir()} != {IMAGE_FILE}:
+        raise ValueError("Delivery directory must contain only the new image archive")
+
+    release = json.loads((ci / "release.json").read_text(encoding="utf-8"))
+    active = json.loads((root / "models/active_model.json").read_text(encoding="utf-8"))
+    if release["model"] != active["version"]:
+        raise ValueError("Tested release does not match the active model")
+    if release["platform"] not in ("linux/amd64", "linux/arm64"):
+        raise ValueError("Unsupported image platform")
+    for check in ("compose_smoke_test", "container_recreation_test"):
+        if release.get(check) != "passed":
+            raise ValueError(f"Required check did not pass: {check}")
+    initial = json.loads((ci / "smoke_response.json").read_text(encoding="utf-8"))
+    imported = json.loads((ci / "import_smoke_response.json").read_text(encoding="utf-8"))
+    if (imported.get("code") != 200 or imported.get("model") != initial["model"]
+            or len(imported.get("data", [])) != 96 or imported["data"] != initial["data"]):
+        raise ValueError("Imported image predictions do not match the tested image")
+    expected_id = (ci / "image_id_before_export.txt").read_text().strip()
+    imported_id = (ci / "image_id_after_import.txt").read_text().strip()
+    if not expected_id.startswith("sha256:") or imported_id != expected_id:
+        raise ValueError("Imported image ID does not match the exported image")
+    if (ci / "delivery/compose.yaml").read_bytes() != (root / "compose.yaml").read_bytes():
+        raise ValueError("Delivery Compose does not match the tested configuration")
+
+    for name in ("README.md", "compose.yaml", ".env.example"):
+        shutil.copy2(root / name, output / name)
+    for directory, pattern in (("docs", "*.md"), ("examples", "*.json")):
+        (output / directory).mkdir()
+        for source in sorted((root / directory).glob(pattern)):
+            shutil.copy2(source, output / directory / source.name)
+    # These are only deployment settings, never CI credentials or runtime state.
+    (output / ".env").write_text(
+        f"POWER_FORECAST_IMAGE={release['image']}\nPOWER_FORECAST_BIND=127.0.0.1\n"
+        "POWER_FORECAST_PORT=8000\nPOWER_FORECAST_RUNTIME_DIR=./runtime\n",
+        encoding="utf-8",
+    )
+    release["image_id"] = expected_id
+    release["offline_image"] = {
+        "file": IMAGE_FILE,
+        "sha256": sha256(archive),
+        "bytes": archive.stat().st_size,
+        "export_import_test": "passed",
+        "import_prediction_test": "passed",
+    }
+    (output / "release.json").write_text(json.dumps(release, indent=2) + "\n", encoding="utf-8")
+    files = sorted(p for p in output.rglob("*") if p.is_file())
+    (output / "SHA256SUMS").write_text(
+        "".join(f"{sha256(p)}  {p.relative_to(output).as_posix()}\n" for p in files),
+        encoding="utf-8",
+    )
+    return release
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ci-dir", type=Path, default=Path("tests/results/ci"))
+    parser.add_argument("--output-dir", type=Path, default=Path("tests/results/offline_delivery"))
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[1]
+    release = build_delivery(root, args.ci_dir, args.output_dir)
+    print(json.dumps({"platform": release["platform"], "offline_image": release["offline_image"]}, indent=2))
+
+
+if __name__ == "__main__":
+    main()

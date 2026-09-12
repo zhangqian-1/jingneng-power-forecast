@@ -86,7 +86,7 @@ jobs:
             "numpy>=1.24,<3.0" "pandas>=2.0,<3.0" matplotlib
 
       - name: Test API assertions
-        run: python -m unittest discover -s tests -p test_deployment.py -v
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
 
       - name: Build daily requests from real station CSVs
         run: |
@@ -192,6 +192,68 @@ jobs:
                            f"- MAPE: {release['metrics']['mape_percent']:.4f}% (7008 points)\n"
                            "- Compose startup and recreation checks passed. Target-server acceptance is still required.\n")
           PY
+
+      - name: Export and reload the tested image
+        shell: bash
+        run: |
+          mkdir -p tests/results/offline_delivery
+          docker image inspect "$POWER_FORECAST_IMAGE" --format '{{.Id}}' > tests/results/ci/image_id_before_export.txt
+          docker image save "$POWER_FORECAST_IMAGE" | gzip -1 > tests/results/offline_delivery/image.tar.gz
+          docker image rm "$POWER_FORECAST_IMAGE"
+          if docker image inspect "$POWER_FORECAST_IMAGE" >/dev/null 2>&1; then
+            echo "The image tag must be absent before the import test"
+            exit 1
+          fi
+          docker image load --input tests/results/offline_delivery/image.tar.gz
+          docker image inspect "$POWER_FORECAST_IMAGE" --format '{{.Id}}' > tests/results/ci/image_id_after_import.txt
+          cmp tests/results/ci/image_id_before_export.txt tests/results/ci/image_id_after_import.txt
+          docker run --rm --pull never --entrypoint python "$POWER_FORECAST_IMAGE" -c '
+          from pathlib import Path
+          root = Path("/app")
+          for name in ("tests", "docs", "examples", ".git", ".github", ".env"):
+              assert not (root / name).exists(), name
+          assert {p.name for p in (root / "models/versions").iterdir()} == {"trend_detail_7station_2025_v1"}
+          assert not any((root / "runtime").iterdir()), "Image contains runtime history"
+          print("Imported image contains only the active model and runtime files")
+          '
+
+      - name: Predict using the imported image without registry access
+        env:
+          POWER_FORECAST_PORT: "8002"
+          POWER_FORECAST_RUNTIME_DIR: /tmp/power-forecast-import
+        run: |
+          mkdir -p "$POWER_FORECAST_RUNTIME_DIR"
+          docker compose -p forecast-import up -d --pull never --wait --wait-timeout 300
+          python tests/run_api_test.py --base-url http://127.0.0.1:8002 \
+            --fixture-dir tests/fixtures/real_data_daily \
+            --save-response tests/results/ci/import_smoke_response.json
+
+      - name: Collect imported image logs
+        if: always()
+        env:
+          POWER_FORECAST_PORT: "8002"
+          POWER_FORECAST_RUNTIME_DIR: /tmp/power-forecast-import
+        run: docker compose -p forecast-import logs --no-color > tests/results/ci/import_container.log 2>&1
+
+      - name: Stop imported image container
+        if: always()
+        env:
+          POWER_FORECAST_PORT: "8002"
+          POWER_FORECAST_RUNTIME_DIR: /tmp/power-forecast-import
+        run: docker compose -p forecast-import down
+
+      - name: Prepare complete offline handover
+        run: python tests/build_offline_delivery.py
+
+      - name: Upload tested offline image and handover files
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-image-${{ env.TARGET_ARCH }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tests/results/offline_delivery/
+          include-hidden-files: true
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload test results and handover settings
         if: always()
