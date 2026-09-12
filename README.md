@@ -2,9 +2,11 @@
 
 接收七个场站的真实功率、温度和湿度，返回未来 24 小时的 **96 点总功率预测**，间隔 15 分钟，单位 MW。当前模型版本：`trend_detail_7station_2025_v1`。
 
+本仓库是供公司 GitLab 接收、维护的完整源码工程，包含已训练模型、接口、测试和部署配置。接收方取得本仓库后，可按下文检查、构建并启动服务，无需重新训练，也无需访问开发方的 GitHub。
+
 ## 代码与数据
 
-以下是源码工程中的文件。离线镜像交付包只包含镜像、启动配置和对接资料，不包含全部源码目录。
+以下文件随源码交接。`app/models/` 是模型实现代码，根目录的 `models/` 是已训练权重及配置，二者都需要保留。
 
 | 文件或目录 | 用途 |
 |---|---|
@@ -58,24 +60,28 @@ python tests/run_rolling_accuracy_test.py --base-url http://127.0.0.1:18000 --ou
 
 ## 部署与启动
 
-从 GitHub 成功运行的 Actions 页面下载 `offline-image-对应架构-...` 附件，才是含镜像本体的交付包；仓库首页 `Code -> Download ZIP` 只是源码。服务器安装并启动 Docker 引擎、安装 Compose 2.20+，解压对应架构的交付包后在该目录执行：
+在与目标服务器相同架构的构建机上，安装并启动 Docker Engine、安装 Compose 2.20+。在本仓库根目录构建镜像；此步骤打包现有模型，不训练模型：
 
 ```bash
-docker load -i image.tar.gz
+docker build -t jingneng-power-forecast:7station-2025-v1 .
+```
+
+首次将 [.env.example](.env.example) 复制为 `.env`（已有配置不要覆盖），填写本次构建的镜像标签：
+
+```dotenv
+POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-2025-v1
+```
+
+在 [compose.yaml](compose.yaml) 所在目录启动并查看状态：
+
+```bash
+docker compose config --quiet
 docker compose up -d --pull never --wait --wait-timeout 300
 docker compose ps
 docker compose logs --tail 100 forecast
 ```
 
-交付包已附带填写好的 `.env`，导入镜像后无需连接 GitHub。使用 [compose.yaml](compose.yaml) 自行配置时，参考 [.env.example](.env.example) 填写镜像地址、端口和缓存目录；不要用空模板覆盖交付配置。
-
-只有需要**从源码重新构建**时，才在源码根目录执行以下命令（使用构建机默认架构）；构建后把 `.env` 中的 `POWER_FORECAST_IMAGE` 设置为 `jingneng-power-forecast:local`，再执行上面的 Compose 命令，无需 `docker load`：
-
-```bash
-docker build -t jingneng-power-forecast:local .
-```
-
-模型、运行依赖已在镜像里，不需重新训练。启动成功后仍需平台传入真实历史，不会自动加载训练 CSV。架构选择、访问控制及 GitLab 制品交接见 [Docker 部署运行说明](docs/Docker部署运行说明.md)。
+源码构建需要取得基础镜像和 Python 依赖；服务器不能联网时，可由公司的构建机完成。若另外收到已测试镜像，可直接导入或从公司镜像仓库拉取，跳过构建，详见 [Docker 部署运行说明](docs/Docker部署运行说明.md)。启动后仍需平台传入真实历史，不会自动加载训练 CSV。
 
 ## 数据怎么进，结果怎么出
 
@@ -95,7 +101,7 @@ docker build -t jingneng-power-forecast:local .
 在本包根目录调用已启动的服务。服务器本机用 `127.0.0.1`；跨机器调用使用部署方提供的网关或内网地址。Compose 默认只监听本机，不能直接从其他电脑访问“服务器IP:8000”。
 
 ```bash
-curl -X POST "http://服务器IP:8000/api/power/forecast" -H "Content-Type: application/json" --data-binary @examples/input_example.json
+curl -X POST "http://127.0.0.1:8000/api/power/forecast" -H "Content-Type: application/json" --data-binary @examples/input_example.json
 ```
 
 这里 `@examples/input_example.json` 表示由调用方读取文件内容并作为 Body 发送，服务器不需要这个文件。空缓存只发送一天样例不会直接预测成功；冷启动流程见接口说明，自动验收方式见部署说明。Windows PowerShell 请使用 `curl.exe`。
@@ -108,6 +114,6 @@ curl -X POST "http://服务器IP:8000/api/power/forecast" -H "Content-Type: appl
 - `accuracy` 是模型离线测试的固定历史参考，不是本次预测的实时准确率。
 - 服务没有内置鉴权及 HTTPS，访问控制由部署平台或网关负责。
 
-2026-09-12，代码提交 `3cbe226fb967` 的 AMD64、ARM64 镜像均已在 GitHub 完成构建、Compose 启动、重建容器缓存恢复及 73 天真实测试集验收（7008 点），MAPE 均为 **10.8778%**。镜像已发布，构建记录见部署说明；目标服务器尚未部署验收，不能据此认定已正式上线。
+交付前验证：2026-09-12，代码提交 `1ea3806a5618` 的 AMD64、ARM64 镜像均已完成构建、Compose 启动、重建容器缓存恢复、73 天真实测试集评分（7008 点）及镜像导出后重新导入预测，MAPE 均为 **10.8778%**。记录见部署说明；这些结果不替代公司环境重新构建后的验证和目标服务器验收。
 
 `docs/`、`examples/` 用于交接；`tests/` 用于接口测试和准确率复测，均不进入生产镜像。模型、运行代码及容器构建文件需要保留。

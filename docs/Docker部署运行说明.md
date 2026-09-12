@@ -1,42 +1,53 @@
 # Docker 部署运行说明
 
-## 1. 交给接收方什么
+## 1. 源码交接与环境
 
-启动服务需要经过测试的镜像地址（或镜像 tar）、[compose.yaml](../compose.yaml) 和填写好的 `.env`。接收方需安装并启动 Docker Engine，安装 Docker Compose 2.20+；不用另装 Python，也不用训练。
+本项目以完整源码工程交到公司 GitLab。保留 `app/`、`models/`、`tests/`、`docs/`、`examples/`、`Dockerfile`、`requirements.txt`、[compose.yaml](../compose.yaml)、[.env.example](../.env.example) 和 `check_config.py`。模型已经训练好，接收方可以检查、构建和运行，不需要重新训练。
 
-在 GitHub 完成构建、测试后，下载该次成功运行的 `offline-image-对应架构-...` 附件。它包含镜像本体 `image.tar.gz`、启动配置、填好镜像标签的 `.env`、本说明、接口说明、JSON 样例、`release.json` 和 `SHA256SUMS`。这才是可转交公司 GitLab 的离线制品；首页 `Code -> Download ZIP` 是源码，`container-checks-...` 是测试报告，都不能代替镜像包。
+接收方安装并启动 Docker Engine，安装 Docker Compose 2.20+。只用容器部署无需在宿主机另装 Python；直接运行源码检查和测试时使用 Python 3.11，命令见 [README](../README.md)。源码构建需要下载基础镜像和 Python 依赖，不能联网的服务器应使用公司构建机生成的镜像或另行交付的已测试镜像。
 
-镜像架构必须与服务器一致：`x86_64` 对应 `amd64`，`aarch64` 对应 `arm64`。Linux 服务器通常执行 `uname -m` 查看。运行内存和耗时以目标服务器实测为准。
+镜像架构必须与服务器一致：`x86_64` 对应 `amd64`，`aarch64` 对应 `arm64`。Linux 执行 `uname -m` 查看。以下构建示例使用构建机默认架构，建议在与目标服务器相同架构的机器构建；跨架构构建需由部署方配置 Buildx 并复测。
 
-## 2. 首次配置
+## 2. 构建与配置
 
-把交付包解压到固定部署目录，不要使用临时目录。`offline-image-...` 已附带 `.env`，无需重新创建。只拿到构建报告中的 `delivery/release.env` 时，将它放在 `compose.yaml` 同目录并命名为 `.env`；自行配置时也可以从 [.env.example](../.env.example) 创建 `.env`：
+从公司 GitLab 取得完整项目，在源码根目录构建：
+
+```bash
+docker build -t jingneng-power-forecast:7station-2025-v1 .
+```
+
+将 `compose.yaml` 放在固定部署目录，不要使用临时目录。首次从 `.env.example` 创建同目录的 `.env`：
 
 ```bash
 # Linux，仅首次执行，不覆盖已有配置
 cp -n .env.example .env
 ```
 
-Windows 可以在文件管理器中复制并重命名；文件名必须是 `.env`，不是 `.env.txt`，不要覆盖已有配置。模板中的镜像地址留空是正常的，必须填写后才能启动；`release.env` 只在 GitHub 构建、测试和发布成功后生成，已通过的构建记录见第 4 节。
+Windows 可在文件管理器中复制并重命名；文件名必须是 `.env`，不是 `.env.txt`，不要覆盖已有配置。模板中的镜像地址留空，使用上面的构建命令后填写：
+
+```dotenv
+POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-2025-v1
+```
 
 | 配置项 | 填写内容 |
 |---|---|
-| `POWER_FORECAST_IMAGE` | 必填，使用成功构建记录里的完整镜像地址；推荐线上使用记录中的摘要地址 |
+| `POWER_FORECAST_IMAGE` | 必填，使用本地已构建/导入的标签，或公司镜像仓库地址；从仓库拉取时可用摘要固定版本 |
 | `POWER_FORECAST_BIND` | 默认 `127.0.0.1`，只允许服务器本机或同机网关访问 |
 | `POWER_FORECAST_PORT` | 默认 `8000`；被占用时换一个空闲端口 |
 | `POWER_FORECAST_RUNTIME_DIR` | 默认 `compose.yaml` 同目录下的 `runtime`，可改为专用持久化目录；需可写，不混用旧十站缓存 |
 
-需要其他机器直连时，由部署方配置内网监听地址或 `0.0.0.0`，并限制防火墙白名单。服务没有内置鉴权和 HTTPS，不要直接开放到公网。`.env` 是本机配置，不提交 GitHub、不装入镜像。
+需要其他机器直连时，由部署方配置内网监听地址或 `0.0.0.0`，并限制防火墙白名单。服务没有内置鉴权和 HTTPS，不要直接开放到公网。`.env` 是部署机配置，不提交源码仓库、不装入镜像。
 
-## 3. 一条命令启动
+## 3. 启动与检查
 
 取得对应架构的镜像并完成上面的配置后，在 `compose.yaml` 所在目录执行，Linux 和 Windows 均可。这条命令启动已有镜像，不负责构建代码：
 
 ```bash
-docker compose up -d --wait --wait-timeout 300
+docker compose config --quiet
+docker compose up -d --pull never --wait --wait-timeout 300
 ```
 
-首次会在本地缺少镜像时尝试拉取。如果镜像仓库私有，先用有镜像读取权限的账号执行 `docker login ghcr.io`；使用具有 `read:packages` 权限的 Personal Access Token 认证，不是 GitHub 网页登录密码。不要把 Token 写进配置文件或交接资料。
+`--pull never` 使用本地已经构建或导入的镜像；缺少镜像时会直接报错。若使用公司镜像仓库，先按公司要求登录该仓库、填写 `.env` 的镜像地址，并执行 `docker compose pull`。账号和 Token 不写入源码、镜像或交接文档。
 
 查看状态、日志和最近结果：
 
@@ -52,40 +63,33 @@ Windows PowerShell 用 `curl.exe`，修改监听地址或端口后同步修改�
 
 `runtime` 保存历史、状态上下文和最近结果，重建容器不会自动删除它。`unless-stopped` 会重启异常退出的容器，也会随 Docker 引擎启动恢复未被手动停止的容器；已手动停止的需再次启动。一个缓存目录只给一个服务实例使用。
 
-## 4. 封装和测试在哪里做
+## 4. 检查、测试与验收
 
-**GitHub 构建与容器测试：** 使用原仓库，完整提交当前代码、七站模型以及新增配置后推送。普通推送构建 `amd64`；要交付 ARM，进入 Actions → Build And Test Docker Image → Run workflow，选择 `architecture=arm64`。ARM 构建需仓库支持 `ubuntu-24.04-arm` 执行器，排队或失败不代表已经通过。
+**源码检查和真实数据回放：** 按 [README](../README.md) 执行 `check_config.py`、单元测试及滚动预测测试。测试使用独立端口和空缓存，不要向生产服务回放历史测试数据。配好 `.env` 后可先运行 `docker compose config --quiet`，它只检查配置，不能证明容器可以运行。
 
-工作流会自动执行：
+**公司重新构建后的容器验收：** 使用独立的测试实例和缓存，检查以下项目，再进行正式部署：
 
-1. 构建与目标架构一致的镜像，用本份 Compose 配置启动。
-2. 用真实七站数据提交 2025-10-06 至 10-12 的七日请求，验证前六次 `409`、第七次 `200`，并核对模型名、96 点时间和功率数值。
-3. 重建容器，检查最近结果、历史缓存和重复预测仍一致。
-4. 使用另一个空缓存容器，回放 2025-10-20 至 12-31 的 73 天测试集，计算 MAPE；与当前离线参考相差超过 0.01 个百分点则停止发布。
-5. 通过后发布带架构、提交号和运行编号的新镜像标签，不覆盖旧 `v2/latest`。
-6. 导出镜像，删除执行器中的原镜像标签，再从导出文件重新导入；核对镜像 ID 一致，检查镜像没有旧模型、测试 CSV、文档、样例及运行缓存。
-7. 用重新导入的镜像启动空缓存容器，禁止拉取镜像，再做七日真实接口测试；结果与导出前一致后，生成可下载的离线交付包。
+1. 镜像架构与服务器一致，Compose 正常启动；GET `latest` 在首次无结果时返回 `404`。
+2. 真实历史达到要求前返回 `409`，满足要求后返回 `200` 和未来 96 点；七日测试使用 `tests/run_api_test.py`。
+3. 重建容器后保留历史和最近结果，重复提交最后一次请求仍可正常预测。
+4. 用另一个空缓存测试实例运行 `tests/run_rolling_accuracy_test.py`，检查 73 天、7008 点评分；与当前离线参考相差超过 0.01 个百分点时，应排查后再发布。
 
-到这次运行的 Summary 看镜像地址、摘要和实测 MAPE。Artifacts 中下载 `offline-image-...` 用于交付；`container-checks-...` 仅保存日志、评分和基础配置，不含镜像。以整次运行成功为准，失败运行有日志不代表封装成功。附件保留 14 天，正式交接需另行保存。交付包中的文档和 JSON 样例放在镜像文件外，不是容器运行依赖。
-
-**本地检查：** 配好 `.env` 后执行 `docker compose config --quiet`，不需要 Docker 引擎即可检查配置；它不能证明容器能运行。需要复测时，在有 Docker 的测试机使用独立目录、端口和项目名，运行 `tests/run_api_test.py`（七日接口）和 `tests/run_rolling_accuracy_test.py`（完整评分），不要向生产缓存回放历史测试数据。
-
-**已完成的构建验收（2026-09-12）：** 以下两个镜像均来自代码提交 `3cbe226fb96717b637eb7e5c17442b7112ce2127`，上述容器预测、重建缓存恢复和 73 天评分全部通过。后续交接文档更新不改变这两个已测试镜像的提交号。
+**交付前已有验证记录（2026-09-12）：** 源码提交 `1ea3806a56188be69efd648b39a1b43e7d155d85` 已在 GitHub 完成两种架构的构建、上述测试，以及镜像导出后重新导入的预测验证。后续纯文档更新不改变这些已测试镜像的提交号。
 
 | 服务器架构 | 成功构建记录 | 7008 点 MAPE |
 |---|---|---|
-| AMD64 / x86_64 | [构建 34685823509](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34685823509) | 10.8778240% |
-| ARM64 / aarch64 | [构建 34685907068](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34685907068) | 10.8778241% |
+| AMD64 / x86_64 | [构建 34687943415](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34687943415) | 10.8778242% |
+| ARM64 / aarch64 | [构建 34688006356](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34688006356) | 10.8778241% |
 
-上表是首次容器验收记录，其旧附件不含镜像文件。要下载完整镜像交付包，选择新增导出功能后的成功运行，并确认存在 `offline-image-...` 附件；镜像和测试版本以该附件的 `release.json` 为准，不要混用两种架构。
+这些链接是开发方验证记录，不是接收方部署的前提；对接时可附带导出的 `release.json` 和评分报告。GitHub 工作流保留在 `.github/workflows/build-image.yml`，上传公司 GitLab 后不会自动执行。本项目目前未配置 `.gitlab-ci.yml`，公司如需自动检查和构建，应按其 Runner、架构和镜像仓库配置流水线。
 
-**目标服务器检查：** 拉取对应架构的同一个镜像，按第 3 节启动，再完成接口调用、缓存持久化和访问控制检查。GitHub 通过不替代目标服务器验收；目标服务器尚未实际部署，不能标记为已上线。
+**目标服务器验收：** 在公司的实际环境核对接口调用、缓存持久化、访问控制、资源占用和响应时间。已有测试通过不代表该服务器已经上线；源码重建的镜像也需要在公司环境复测。
 
-## 5. 离线交付与维护
+## 5. 可选镜像交付与维护
 
-**GitHub 下载后转交 GitLab：** 取得对应架构的 `offline-image-...` ZIP，交给对接方上传公司允许的 GitLab Generic Package Registry（制品库）或 Release 附件存储。镜像较大，不要直接 `git add` 到普通源码仓库；只上传源码不会同时上传镜像。上传后应按 `SHA256SUMS` 核对，不能用较早的配置 ZIP 或源码 ZIP 代替本交付包。
+源码是 GitLab 项目交接的主体，已测试镜像可另作配套制品，交到公司指定的制品库、镜像仓库或发布附件。大镜像文件不要直接提交到普通 Git 源码历史，镜像包也不代替源码项目。
 
-**接收方运行：** 解压交付包后，Linux 在该目录执行：
+**已收到完整镜像包时：** 包内应有 `image.tar.gz`、`compose.yaml`、`.env`、`release.json` 和 `SHA256SUMS`。可跳过源码构建，解压后在 Linux 执行：
 
 ```bash
 sha256sum -c SHA256SUMS
@@ -93,24 +97,23 @@ docker load -i image.tar.gz
 docker compose up -d --pull never --wait --wait-timeout 300
 ```
 
-`.env` 已填写该镜像的标签，离线启动时保留标签，不改成仓库摘要地址。加载本地镜像无需访问 GitHub、无需登录 GHCR；Docker 和 Compose 仍需事先安装。需要其他机器调用时，按第 2 节配置监听地址及访问控制；导入镜像不会带入测试历史，首次仍需平台补传真实历史。Windows PowerShell 可用 `Get-FileHash -Algorithm SHA256 image.tar.gz` 核对 `release.json` 中的镜像文件校验值。
+保留包内 `.env` 的镜像标签，不改成仓库摘要地址；其他端口和目录按部署环境调整。导入镜像不需要外部镜像仓库，也不带测试历史，首次仍需平台补传真实数据。Windows PowerShell 可用 `Get-FileHash -Algorithm SHA256 image.tar.gz` 核对 `release.json` 中的镜像文件校验值。
 
 如果接收方需要把镜像放进公司 Container Registry，可在导入后按公司提供的地址执行 `docker tag`、`docker push`，并同步修改服务器 `.env`；不需要重新训练或更改预测代码。
 
-**自行导出已有镜像：** 以下 `完整镜像标签` 替换为成功构建记录里的实际值：
+**自行导出本地构建的镜像：** 在第 2 节的构建机执行：
 
 ```bash
-docker pull 完整镜像标签
-docker save -o jingneng-power-forecast.tar 完整镜像标签
+docker save -o jingneng-power-forecast.tar jingneng-power-forecast:7station-2025-v1
 ```
 
-将 tar 传到服务器后执行 `docker load -i jingneng-power-forecast.tar`，并把 `.env` 中镜像填写为导入的同一标签，再执行一条命令启动。不要把镜像 tar 提交到代码仓库。
+将 tar 连同 `compose.yaml`、配置模板和接口资料交给服务器部署方。服务器执行 `docker load -i jingneng-power-forecast.tar`，按第 2 节配置同一镜像标签，再按第 3 节启动。
 
 ```bash
 # 停止并移除容器，保留宿主机 runtime 数据
 docker compose down
 # 使用当前配置重新启动
-docker compose up -d --wait --wait-timeout 300
+docker compose up -d --pull never --wait --wait-timeout 300
 ```
 
 升级时先备份 runtime、记录旧镜像地址，再更新 `.env` 中的镜像并启动。`docker compose restart` 只重启，不会应用新镜像配置；跨模型版本不要直接复用不兼容的历史缓存。
