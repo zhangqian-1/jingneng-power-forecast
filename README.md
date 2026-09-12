@@ -31,6 +31,7 @@ docker compose up -d --wait --wait-timeout 300
 ## 完整 JSON 样例
 
 - [输入样例](examples/input_example.json)：2025-10-19 的 96 个真实历史点。
+- [冷启动输入样例](examples/input_not_ready_409.json)：2025-10-06 的 96 个真实历史点，与缓存不足输出配对。
 - [成功输出样例](examples/output_example.json)：历史缓存已预热后，模型预测的 2025-10-20 的 96 点。
 - [缓存不足输出样例](examples/output_not_ready_409.json)：首次提交 2025-10-06 数据时的 `409` 响应。
 
@@ -50,6 +51,6 @@ curl -X POST "http://服务器IP:8000/api/power/forecast" -H "Content-Type: appl
 - `accuracy` 是模型离线测试的固定历史参考，不是本次预测的实时准确率。
 - 服务没有内置鉴权及 HTTPS，访问控制由部署平台或网关负责。
 
-本地完整测试集回放 MAPE 为 **10.8778%**。Compose 配置和 GitHub 容器测试流程已补充；新的容器流程、ARM64 镜像与目标服务器仍待实际执行验证，不能据此认定已正式上线。
+2026-09-12，代码提交 `3cbe226fb967` 的 AMD64、ARM64 镜像均已在 GitHub 完成构建、Compose 启动、重建容器缓存恢复及 73 天真实测试集验收（7008 点），MAPE 均为 **10.8778%**。镜像已发布，构建记录见部署说明；目标服务器尚未部署验收，不能据此认定已正式上线。
 
 `docs/`、`examples/` 用于交接；`tests/` 用于接口测试和准确率复测，均不进入生产镜像。模型、运行代码及容器构建文件需要保留。

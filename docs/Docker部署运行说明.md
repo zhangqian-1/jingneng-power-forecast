@@ -15,7 +15,7 @@
 cp -n .env.example .env
 ```
 
-Windows 可以在文件管理器中复制并重命名；文件名必须是 `.env`，不是 `.env.txt`，不要覆盖已有配置。模板中的镜像地址留空是正常的，必须填写后才能启动；`release.env` 只在 GitHub 构建、测试和发布成功后生成，目前尚未提供正式发布地址。
+Windows 可以在文件管理器中复制并重命名；文件名必须是 `.env`，不是 `.env.txt`，不要覆盖已有配置。模板中的镜像地址留空是正常的，必须填写后才能启动；`release.env` 只在 GitHub 构建、测试和发布成功后生成，已通过的构建记录见第 4 节。
 
 | 配置项 | 填写内容 |
 |---|---|
@@ -34,7 +34,7 @@ Windows 可以在文件管理器中复制并重命名；文件名必须是 `.env
 docker compose up -d --wait --wait-timeout 300
 ```
 
-首次会在本地缺少镜像时尝试拉取。如果镜像仓库私有，先用有读取权限的账号执行 `docker login ghcr.io`，按提示完成认证，不要把密码或 Token 写进配置文件。
+首次会在本地缺少镜像时尝试拉取。如果镜像仓库私有，先用有镜像读取权限的账号执行 `docker login ghcr.io`；使用具有 `read:packages` 权限的 Personal Access Token 认证，不是 GitHub 网页登录密码。不要把 Token 写进配置文件或交接资料。
 
 查看状态、日志和最近结果：
 
@@ -66,7 +66,16 @@ Windows PowerShell 用 `curl.exe`，修改监听地址或端口后同步修改�
 
 **本地检查：** 配好 `.env` 后执行 `docker compose config --quiet`，不需要 Docker 引擎即可检查配置；它不能证明容器能运行。需要复测时，在有 Docker 的测试机使用独立目录、端口和项目名，运行 `tests/run_api_test.py`（七日接口）和 `tests/run_rolling_accuracy_test.py`（完整评分），不要向生产缓存回放历史测试数据。
 
-**目标服务器检查：** 拉取对应架构的同一个镜像，按第 3 节启动，再完成接口调用、缓存持久化和访问控制检查。GitHub 通过不替代目标服务器验收。截至本次文档更新，新的 Compose 容器流程尚未在 GitHub 或目标服务器实际执行，不能标记为已上线。
+**已完成的构建验收（2026-09-12）：** 以下两个镜像均来自代码提交 `3cbe226fb96717b637eb7e5c17442b7112ce2127`，上述容器预测、重建缓存恢复和 73 天评分全部通过。后续交接文档更新不改变这两个已测试镜像的提交号。
+
+| 服务器架构 | 成功构建记录 | 7008 点 MAPE |
+|---|---|---|
+| AMD64 / x86_64 | [构建 34685823509](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34685823509) | 10.8778240% |
+| ARM64 / aarch64 | [构建 34685907068](https://github.com/zhangqian-1/jingneng-power-forecast/actions/runs/34685907068) | 10.8778241% |
+
+从对应记录的 Summary 取得镜像地址、从附件取得 `delivery/release.env`，不要混用两种架构。镜像不包含测试 CSV、JSON 样例、文档或本地缓存。
+
+**目标服务器检查：** 拉取对应架构的同一个镜像，按第 3 节启动，再完成接口调用、缓存持久化和访问控制检查。GitHub 通过不替代目标服务器验收；目标服务器尚未实际部署，不能标记为已上线。
 
 ## 5. 离线交付与维护
 
