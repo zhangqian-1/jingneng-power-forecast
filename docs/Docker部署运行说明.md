@@ -127,6 +127,8 @@ docker load -i jingneng-power-forecast.tar
 
 ### A.2 导入配套镜像包
 
+已验证镜像下载：[GitHub Release v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1)。选择 ARM64 或 AMD64 附件，源码交接使用同一发布页的对应源码 ZIP。私有仓库下载需要有访问权限的 GitHub 账号；公司接收后应转存至指定制品位置。
+
 将匹配服务器架构的完整镜像包解压至固定目录。包内包含 `image.tar.gz`、`compose.yaml`、`.env`、`release.json` 和 `SHA256SUMS`。在解压目录校验，成功后导入：
 
 ```bash
@@ -152,7 +154,9 @@ docker load -i image.tar.gz
 
 文件完整性按 `SHA256SUMS` 校验。镜像内仅包含运行代码、依赖及当前七站模型；文档、样例位于交付包外层，不参与运行。
 
-GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。工作流全部成功后，从该次运行下载对应的 `offline-image-…` 及 `container-checks-…` 制品，保留期为 14 天。GitHub 验证流程不在 GitLab 自动执行。
+当前 Release 绑定已验证源码提交 `042dcd1ccd1dd75f22cf9849a1cfffc14a93802e`，发布附件保持原构建文件不变；main 分支新增下载入口不改变包内文档或镜像。Release 附件不受 Actions 制品 14 天保留期限制。
+
+后续构建：GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。工作流全部成功后，从该次运行取得对应的 `offline-image-…` 及 `container-checks-…` 制品，再发布为新版本。GitHub 验证流程不在 GitLab 自动执行。
 
 复测步骤见 [README](../README.md)，使用独立端口和空缓存实例，历史测试集及样例数据不发送到生产服务。`tests/`、`examples/`、`docs/` 属于交接资料，不进入运行镜像。
 

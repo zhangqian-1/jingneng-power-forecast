@@ -4,6 +4,18 @@
 
 本仓库为完整源码工程，包含已训练模型、接口、测试和部署配置，可交付至公司 GitLab 维护。源码构建与镜像部署均无需重新训练模型。
 
+## 已验证镜像下载
+
+发布页：[v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1)。仓库为私有仓库，下载需要有访问权限的 GitHub 账号。
+
+| 下载 | 用途 |
+|---|---|
+| [ARM64 镜像包](https://github.com/zhangqian-1/jingneng-power-forecast/releases/download/v7station-2025-042dcd1/offline-image-arm64-34703803433-1.zip) | ARM / aarch64 服务器 |
+| [AMD64 镜像包](https://github.com/zhangqian-1/jingneng-power-forecast/releases/download/v7station-2025-042dcd1/offline-image-amd64-34703786520-1.zip) | x86_64 服务器 |
+| [对应源码 ZIP](https://github.com/zhangqian-1/jingneng-power-forecast/releases/download/v7station-2025-042dcd1/jingneng-power-forecast-source-042dcd1.zip) | 解压后提交公司指定的功率预测 GitLab 仓库 |
+
+本发布绑定已验证提交 `042dcd1ccd1dd75f22cf9849a1cfffc14a93802e`，两种架构的 73 天 / 7008 点 MAPE 均约 10.8778%。镜像 ZIP 的校验值和测试报告见发布页附件；解压后的部署步骤见包内 `docs/Docker部署运行说明.md` 附录 A.2。发布附件不受 Actions 制品 14 天保留期限制。
+
 ## 交付内容
 
 | 交付物 | 用途 |
@@ -124,6 +136,6 @@ curl -X POST "http://127.0.0.1:8000/api/power/forecast" -H "Content-Type: applic
 - `accuracy` 是模型离线测试的固定历史参考，不是本次预测的实时准确率。
 - 服务没有内置鉴权及 HTTPS，访问控制由部署平台或网关负责。
 
-版本及测试记录以对应镜像包内的 `release.json` 为准，包含源码提交、CPU 架构、73 天 / 7008 点实测指标及镜像导出后重新导入验证状态。源码、文档和镜像须对应同一个提交版本；容器测试不替代目标服务器上的平台接入验收。
+版本及测试记录以对应镜像包内的 `release.json` 为准，包含源码提交、CPU 架构、73 天 / 7008 点实测指标及镜像导出后重新导入验证状态。成套交付使用发布页的对应源码及镜像，部署文档以包内版本为准；main 分支后续的下载入口说明更新不改变已发布制品。容器测试不替代目标服务器上的平台接入验收。
 
 `docs/`、`examples/` 用于交接；`tests/` 用于接口测试和准确率复测，均不进入生产镜像。模型、运行代码及容器构建文件需要保留。
