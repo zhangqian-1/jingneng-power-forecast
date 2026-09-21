@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           IMAGE_REPO="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jingneng-power-forecast"
-          IMAGE_TAG="7station-2025-v1-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          IMAGE_TAG="7station-platform-v1-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "POWER_FORECAST_IMAGE=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
           mkdir -p tests/results/ci "$POWER_FORECAST_RUNTIME_DIR"
           docker compose version
@@ -177,6 +177,8 @@ jobs:
           assert info["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["GITHUB_SHA"]
           release = {"image": image, "digest": digests[0], "platform": "linux/" + info["Architecture"],
                      "commit": os.environ["GITHUB_SHA"], "model": "trend_detail_7station_2025_v1",
+                     "platform_contract": "fluxcast_v1", "training_timezone": "unconfirmed",
+                     "utc_production_acceptance": "pending",
                      "compose_smoke_test": "passed", "container_recreation_test": "passed",
                      "metrics": json.loads((out / "rolling_accuracy/summary.json").read_text())["metrics"]}
           (out / "release.json").write_text(json.dumps(release, indent=2) + "\n")

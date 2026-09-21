@@ -4,54 +4,46 @@ import json
 from pathlib import Path
 import unittest
 
-from run_api_test import expected_model_name, validate_prediction
+from platform_test_utils import validate_platform_prediction
 
 
 class PredictionContractTests(unittest.TestCase):
     def setUp(self):
         root = Path(__file__).resolve().parents[1]
-        self.payload = json.loads((root / "examples/input_example.json").read_text(encoding="utf-8"))
-        self.response = json.loads((root / "examples/output_example.json").read_text(encoding="utf-8"))
-        # These tests exercise the seven-day smoke-test contract, not the example's eight-day cache.
-        self.response["historyCache"]["continuousPoints"] = 672
-        self.model = expected_model_name()
+        self.payload = json.loads((root / "examples/platform_input_example.json").read_text(encoding="utf-8"))
+        self.response = json.loads((root / "examples/platform_output_example.json").read_text(encoding="utf-8"))
 
     def test_valid_contract(self):
-        validate_prediction(self.response, self.payload, self.model)
+        validate_platform_prediction(self.response, self.payload)
 
-    def test_wrong_model(self):
-        self.response["model"] = "old-model"
+    def test_wrong_event(self):
+        self.response["event_key"] = "wrong.event"
         with self.assertRaises(AssertionError):
-            validate_prediction(self.response, self.payload, self.model)
+            validate_platform_prediction(self.response, self.payload)
 
     def test_wrong_time_or_sequence(self):
-        for key, value in (("predictedTime", "202501010000"), ("timeSeries", 2)):
+        for key, value in (("timestamp", "2025-01-01 00:00:00"), ("varname", "wrongVariable")):
             response = copy.deepcopy(self.response)
-            response["data"][0][key] = value
+            response["result_point"][0][key] = value
             with self.assertRaises(AssertionError):
-                validate_prediction(response, self.payload, self.model)
+                validate_platform_prediction(response, self.payload)
 
     def test_missing_or_extra_predictions(self):
-        for rows in (self.response["data"][:-1], self.response["data"] + self.response["data"][:1]):
-            response = dict(self.response, data=rows)
+        for rows in (self.response["result_point"][:-1], self.response["result_point"] + self.response["result_point"][:1]):
+            response = dict(self.response, result_point=rows)
             with self.assertRaises(AssertionError):
-                validate_prediction(response, self.payload, self.model)
+                validate_platform_prediction(response, self.payload)
 
     def test_invalid_power(self):
         for value in (None, True, "123.4", float("nan"), float("inf")):
-            self.response["data"][0]["predictedPower"] = value
+            self.response["result_point"][0]["value"] = value
             with self.subTest(value=value), self.assertRaises(AssertionError):
-                validate_prediction(self.response, self.payload, self.model)
+                validate_platform_prediction(self.response, self.payload)
 
-    def test_invalid_accuracy_type(self):
-        self.response["data"][0]["accuracy"] = 95.0
+    def test_empty_result_is_not_a_prediction(self):
+        self.response["result_point"] = []
         with self.assertRaises(AssertionError):
-            validate_prediction(self.response, self.payload, self.model)
-
-    def test_history_not_ready(self):
-        self.response["historyCache"]["ready"] = False
-        with self.assertRaises(AssertionError):
-            validate_prediction(self.response, self.payload, self.model)
+            validate_platform_prediction(self.response, self.payload)
 
 
 if __name__ == "__main__":

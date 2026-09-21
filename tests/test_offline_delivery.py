@@ -24,7 +24,7 @@ class OfflineDeliveryTests(unittest.TestCase):
             "compose_smoke_test": "passed", "container_recreation_test": "passed",
         }
         (self.ci / "release.json").write_text(json.dumps(self.release))
-        response = (self.root / "examples/output_example.json").read_bytes()
+        response = (self.root / "examples/platform_output_example.json").read_bytes()
         for name in ("smoke_response.json", "import_smoke_response.json"):
             (self.ci / name).write_bytes(response)
         for name in ("image_id_before_export.txt", "image_id_after_import.txt"):
@@ -38,7 +38,7 @@ class OfflineDeliveryTests(unittest.TestCase):
         release = self.build()
         self.assertEqual(release["offline_image"]["sha256"], sha256(self.output / "image.tar.gz"))
         self.assertIn("POWER_FORECAST_IMAGE=example/forecast:test", (self.output / ".env").read_text())
-        self.assertTrue((self.output / "examples/input_example.json").is_file())
+        self.assertTrue((self.output / "examples/platform_input_example.json").is_file())
         self.assertTrue((self.output / "README.md").is_file())
         self.assertFalse((self.output / "tests").exists())
         self.assertFalse((self.output / "runtime").exists())
@@ -59,7 +59,7 @@ class OfflineDeliveryTests(unittest.TestCase):
     def test_changed_predictions_rejected(self):
         path = self.ci / "import_smoke_response.json"
         response = json.loads(path.read_text(encoding="utf-8"))
-        response["data"][0]["predictedPower"] += 1
+        response["result_point"][0]["value"] += 1
         path.write_text(json.dumps(response))
         with self.assertRaisesRegex(ValueError, "predictions"):
             self.build()

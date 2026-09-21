@@ -16,6 +16,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from platform_test_utils import PLATFORM_PATH, validate_not_ready, validate_platform_prediction
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -108,7 +110,7 @@ def make_payload(
     timeline = pd.date_range(start=start, periods=POINTS_PER_DAY, freq="15min")
     records: list[dict[str, Any]] = []
     for timestamp in timeline:
-        stations: dict[str, Any] = {}
+        record = {"timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S")}
         for station in STATION_FEATURES:
             source = frames[station]
             row = source.loc[timestamp] if timestamp in source.index else None
@@ -120,18 +122,12 @@ def make_payload(
                 point: clean_value(row.get(point)) if row is not None else None
                 for point in STATION_WEATHER_POINTS[station]
             }
-            stations[station] = {
-                "load_points": load_points,
-                "weather_points": weather_points,
-            }
-        records.append(
-            {"ts": timestamp.strftime("%Y-%m-%d %H:%M:%S"), "stations": stations}
-        )
+            record.update(load_points)
+            record.update(weather_points)
+        records.append(record)
     return {
-        "batchTime": timeline[-1].strftime("%Y%m%d%H%M"),
-        "intervalMinutes": 15,
-        "historyDays": 1,
-        "data": records,
+        "point_table": sorted(key for key in records[0] if key != "timestamp"),
+        "frames": records,
     }
 
 
@@ -227,6 +223,8 @@ def write_outputs(
         "metrics": calculate_metrics(actual, predicted),
         "http_status_counts": config["http_status_counts"],
         "response_accuracy_is_not_used_for_scoring": True,
+        "contract": "fluxcast_v1",
+        "time_basis": "original_csv_clock_labels; training_timezone_unconfirmed",
     }
     (output_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False),
@@ -270,7 +268,7 @@ def main() -> int:
     actual_total = build_actual_total(frames, score_timeline)
     actual_lookup = actual_total.to_dict()
 
-    api_url = args.base_url.rstrip("/") + "/api/power/forecast"
+    api_url = args.base_url.rstrip("/") + PLATFORM_PATH
     total_requests = args.warmup_days + args.target_windows - 1
     status_counts: dict[str, int] = {}
     scored_rows: list[dict[str, Any]] = []
@@ -291,7 +289,7 @@ def main() -> int:
         status_key = str(status)
         status_counts[status_key] = status_counts.get(status_key, 0) + 1
 
-        expected_status = {200, 409} if expected_target_start < target_start else {200}
+        expected_status = {200}
         if status not in expected_status:
             raise RuntimeError(
                 f"request {request_index + 1}/{total_requests} "
@@ -302,7 +300,7 @@ def main() -> int:
         if request_index in {0, args.warmup_days - 1}:
             sample_dir = args.output_dir / "samples"
             sample_dir.mkdir(parents=True, exist_ok=True)
-            sample_name = "not_ready_409" if status == 409 else "success"
+            sample_name = "not_ready" if not response.get("result_point") else "success"
             for kind, value in (("input", payload), ("output", response)):
                 (sample_dir / f"{kind}_{sample_name}.json").write_text(
                     json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8"
@@ -314,42 +312,28 @@ def main() -> int:
             f"({elapsed:.2f}s)"
         )
 
-        if status == 200:
-            rows = response.get("data")
-            if not isinstance(rows, list) or len(rows) != POINTS_PER_DAY:
-                raise RuntimeError("successful response does not contain 96 data points")
-            timestamps = pd.to_datetime([str(row.get("predictedTime")) for row in rows], format="%Y%m%d%H%M")
-            expected_times = pd.date_range(expected_target_start, periods=96, freq="15min")
-            if not timestamps.equals(expected_times):
-                raise RuntimeError("response timestamps are not the next 96 distinct consecutive points")
-            if [row.get("timeSeries") for row in rows] != list(range(1, 97)):
-                raise RuntimeError("response timeSeries must be 1 through 96")
-            if not np.isfinite([float(row["predictedPower"]) for row in rows]).all():
-                raise RuntimeError("response power contains a non-finite value")
-            if expected_target_start < target_start:
-                continue
-            for row in rows:
-                predicted_time = pd.to_datetime(
-                    str(row.get("predictedTime")), format="%Y%m%d%H%M", errors="coerce"
-                )
-                if pd.isna(predicted_time) or predicted_time not in actual_lookup:
-                    raise RuntimeError(
-                        f"response timestamp cannot be aligned with actual data: {row}"
-                    )
-                scored_rows.append(
-                    {
-                        "request_index": request_index + 1,
-                        "request_start": request_start,
-                        "request_end": request_end,
-                        "target_date": predicted_time.strftime("%Y-%m-%d"),
-                        "horizon_step": row.get("timeSeries"),
-                        "ts": predicted_time,
-                        "actual_total_power": float(actual_lookup[predicted_time]),
-                        "predicted_power": float(row["predictedPower"]),
-                        "response_accuracy_estimate": row.get("accuracy"),
-                        "response_test_rmse": response.get("testRMSE"),
-                    }
-                )
+        if not response.get("result_point"):
+            validate_not_ready(response)
+            if expected_target_start >= target_start:
+                raise RuntimeError("Platform returned no forecast during the scoring interval")
+            continue
+        validate_platform_prediction(response, payload)
+        if expected_target_start < target_start:
+            continue
+        for index, row in enumerate(response["result_point"], start=1):
+            predicted_time = pd.Timestamp(row["timestamp"])
+            if predicted_time not in actual_lookup:
+                raise RuntimeError(f"Response timestamp cannot be aligned with actual data: {row}")
+            scored_rows.append({
+                "request_index": request_index + 1,
+                "request_start": request_start,
+                "request_end": request_end,
+                "target_date": predicted_time.strftime("%Y-%m-%d"),
+                "horizon_step": index,
+                "ts": predicted_time,
+                "actual_total_power": float(actual_lookup[predicted_time]),
+                "predicted_power": row["value"],
+            })
         if args.request_delay:
             time.sleep(args.request_delay)
 

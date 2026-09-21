@@ -20,6 +20,7 @@ def main() -> int:
         APP_DIR / "predict.py",
         APP_DIR / "input_adapter.py",
         APP_DIR / "history_cache.py",
+        APP_DIR / "platform_adapter.py",
         APP_DIR / "models" / "trend_detail.py",
     ]
     for path in required_files:
@@ -72,9 +73,14 @@ def main() -> int:
 
     api_path = APP_DIR / "api.py"
     api_content = api_path.read_text(encoding="utf-8") if api_path.exists() else ""
-    for endpoint in ["/api/power/forecast", "/api/power/forecast/latest"]:
-        if endpoint not in api_content:
-            errors.append(f"API缺少接口: {endpoint}")
+    if "PLATFORM_PATH" not in api_content or "/api/power/forecast" in api_content:
+        errors.append("API必须仅提供平台接口")
+    try:
+        from platform_adapter import PLATFORM_PATH, POINT_TABLE
+        if PLATFORM_PATH != "/api/v1/fluxcast/compute" or len(set(POINT_TABLE)) != 35:
+            errors.append("平台接口路径或35个测点配置错误")
+    except Exception as exc:
+        errors.append(f"平台接口配置加载失败: {exc}")
 
     if errors:
         print("[FAIL] 生产部署检查未通过")
@@ -88,6 +94,7 @@ def main() -> int:
     print("- 全部版本化模型文件哈希校验通过")
     print("- 外部每次提交96点，缓存至少672点（最多保留768点上下文）后输出96点")
     print("- 未发现示例输入、静态预测或模拟数据生成逻辑")
+    print("- 平台接口已适配；训练数据时区未确认，本检查不代表UTC生产接入验收")
     return 0
 
 

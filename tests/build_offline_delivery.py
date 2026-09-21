@@ -37,9 +37,10 @@ def build_delivery(root: Path, ci: Path, output: Path) -> dict:
             raise ValueError(f"Required check did not pass: {check}")
     initial = json.loads((ci / "smoke_response.json").read_text(encoding="utf-8"))
     imported = json.loads((ci / "import_smoke_response.json").read_text(encoding="utf-8"))
-    if (imported.get("code") != 200 or imported.get("model") != initial["model"]
-            or len(imported.get("data", [])) != 96 or imported["data"] != initial["data"]):
-        raise ValueError("Imported image predictions do not match the tested image")
+    if (initial.get("event_key") != "JNH.Fluxcast.Compute"
+            or len(initial.get("result_point", [])) != 96
+            or imported != initial):
+        raise ValueError("Imported predictions do not match the tested image")
     expected_id = (ci / "image_id_before_export.txt").read_text().strip()
     imported_id = (ci / "image_id_after_import.txt").read_text().strip()
     if not expected_id.startswith("sha256:") or imported_id != expected_id:

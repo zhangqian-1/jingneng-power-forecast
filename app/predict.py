@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +27,7 @@ from models.causal_state import add_causal_states
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = PACKAGE_ROOT / "models" / "active_model.json"
-DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_7station_2025_v1.csv"
+DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_7station_2025_v1_platform_unconfirmed_v1.csv"
 
 
 def _sha256(path: Path) -> str:
@@ -268,7 +267,7 @@ def _load_backend(model_path: Path, device: str) -> TrendDetailBackend:
 
 
 class PowerPredictor:
-    """Serve the active versioned model while keeping the HTTP contract stable."""
+    """Run the active model on internal station records."""
 
     def __init__(
         self,
@@ -287,45 +286,31 @@ class PowerPredictor:
             cache_path=history_cache_path,
             required_points=self.input_size,
             state_centers=self.backend.station.state_centers,
-            model_name=self.model_name,
+            model_name=self.model_name + "__platform_clock_unconfirmed_v1",
         )
         self.input_adapter = InputAdapter()
 
-    def predict_json(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def predict_records(self, payload: dict[str, Any]) -> dict[str, Any]:
         parsed = self.input_adapter.parse_json(payload)
         frame, cache_status = self.history_cache.merge(parsed)
         prediction = self.backend.predict(frame, parsed.last_timestamp)
 
-        estimated_accuracy = np.clip(
-            100.0 - self.backend.per_horizon_mape, 0.0, 100.0
-        )
         future_timestamps = pd.date_range(
             start=parsed.last_timestamp + pd.Timedelta(minutes=15),
             periods=self.horizon,
             freq="15min",
         )
         output_rows = []
-        for index, (timestamp, power, accuracy) in enumerate(
-            zip(future_timestamps, prediction, estimated_accuracy), start=1
-        ):
+        for timestamp, power in zip(future_timestamps, prediction):
             output_rows.append(
                 {
-                    "predictedTime": pd.Timestamp(timestamp).strftime("%Y%m%d%H%M"),
-                    "timeSeries": index,
-                    "predictedPower": round(float(power), 4),
-                    "accuracy": f"{accuracy:.2f}%",
+                    "timestamp": pd.Timestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S"),
+                    "value": round(float(power), 4),
                 }
             )
 
         return {
-            "code": 200,
-            "msg": "success",
-            "batchTime": parsed.batch_time,
-            "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "model": self.model_name,
-            "accuracyBasis": "historical_test_error_by_forecast_horizon",
-            "testRMSE": round(float(self.backend.test_metrics["rmse"]), 4),
             "inputQuality": parsed.input_quality,
             "historyCache": cache_status,
-            "data": output_rows,
+            "predictions": output_rows,
         }

@@ -71,7 +71,7 @@ def make_payloads(frames: dict[str, pd.DataFrame], output_dir: Path, end: pd.Tim
         day_index = timeline[day * 96 : (day + 1) * 96]
         records = []
         for ts in day_index:
-            stations: dict[str, dict[str, dict[str, float | None]]] = {}
+            record = {"timestamp": ts.strftime("%Y-%m-%d %H:%M:%S")}
             for station in STATION_FEATURES:
                 source = frames[station]
                 if ts in source.index:
@@ -86,17 +86,13 @@ def make_payloads(frames: dict[str, pd.DataFrame], output_dir: Path, end: pd.Tim
                     point: clean_value(row.get(point))
                     for point in STATION_WEATHER_POINTS[station]
                 }
-                stations[station] = {
-                    "load_points": load_points,
-                    "weather_points": weather_points,
-                }
-            records.append({"ts": ts.strftime("%Y-%m-%d %H:%M:%S"), "stations": stations})
+                record.update(load_points)
+                record.update(weather_points)
+            records.append(record)
 
         payload = {
-            "batchTime": day_index[-1].strftime("%Y%m%d%H%M"),
-            "intervalMinutes": 15,
-            "historyDays": 1,
-            "data": records,
+            "point_table": sorted(key for key in records[0] if key != "timestamp"),
+            "frames": records,
         }
         (output_dir / f"day_{day + 1:02d}.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"

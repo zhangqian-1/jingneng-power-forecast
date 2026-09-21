@@ -2,43 +2,16 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
 import json
-import math
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from platform_test_utils import PLATFORM_PATH, validate_not_ready, validate_platform_prediction
+
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def expected_model_name() -> str:
-    active = json.loads((ROOT / "models/active_model.json").read_text(encoding="utf-8"))
-    manifest = ROOT / "models" / active["model_dir"] / active["manifest"]
-    return str(json.loads(manifest.read_text(encoding="utf-8"))["model_name"])
-
-
-def validate_prediction(result: dict, payload: dict, expected_model: str) -> None:
-    if result.get("code") != 200 or result.get("model") != expected_model:
-        raise AssertionError("response code or model does not match the active package")
-    rows = result.get("data")
-    if not isinstance(rows, list) or len(rows) != 96:
-        raise AssertionError("response must contain 96 predictions")
-    cutoff = max(datetime.fromisoformat(row["ts"]) for row in payload["data"])
-    for index, row in enumerate(rows, start=1):
-        target = (cutoff + timedelta(minutes=15 * index)).strftime("%Y%m%d%H%M")
-        if row.get("predictedTime") != target or row.get("timeSeries") != index:
-            raise AssertionError("prediction timestamps or sequence numbers are incorrect")
-        power = row.get("predictedPower")
-        if type(power) not in (int, float) or not math.isfinite(power):
-            raise AssertionError("predictedPower must be a finite JSON number")
-        if not isinstance(row.get("accuracy"), str) or not row["accuracy"].endswith("%"):
-            raise AssertionError("accuracy must be a percentage string")
-    cache = result.get("historyCache", {})
-    if cache.get("ready") is not True or cache.get("continuousPoints") != 672:
-        raise AssertionError("seven-day test cache must be ready with 672 points")
 
 
 def request_json(url: str, method: str = "GET", payload: dict | None = None) -> tuple[int, dict]:
@@ -59,8 +32,10 @@ def wait_until_ready(base_url: str) -> None:
     deadline = time.time() + 180
     while time.time() < deadline:
         try:
-            status, _ = request_json(f"{base_url}/api/power/forecast/latest")
-            if status in {404, 200}:
+            status, result = request_json(f"{base_url}{PLATFORM_PATH}/latest")
+            if result.get("event_key") == "JNH.Fluxcast.Compute" and (
+                    (status == 200 and len(result.get("result_point", [])) == 96)
+                    or (status == 404 and result.get("reason") == "no_forecast")):
                 return
         except (URLError, TimeoutError, OSError):
             pass
@@ -81,20 +56,20 @@ def main() -> None:
     files = sorted(args.fixture_dir.glob("day_*.json"))
     if len(files) != 7:
         raise RuntimeError(f"expected 7 daily fixtures, found {len(files)}")
-    model = expected_model_name()
     last_payload = json.loads(files[-1].read_text(encoding="utf-8"))
+    endpoint = PLATFORM_PATH
 
     if args.verify_restored:
         saved = json.loads(args.verify_restored.read_text(encoding="utf-8"))
-        status, latest = request_json(f"{args.base_url}/api/power/forecast/latest")
+        status, latest = request_json(f"{args.base_url}{endpoint}/latest")
         if status != 200 or latest != saved:
             raise AssertionError("latest result was not preserved across container recreation")
-        validate_prediction(latest, last_payload, model)
-        status, repeated = request_json(f"{args.base_url}/api/power/forecast", method="POST", payload=last_payload)
+        validate_platform_prediction(latest, last_payload)
+        status, repeated = request_json(f"{args.base_url}{endpoint}", method="POST", payload=last_payload)
         if status != 200:
             raise AssertionError(f"history was not restored: HTTP {status}: {repeated}")
-        validate_prediction(repeated, last_payload, model)
-        if repeated["data"] != saved["data"]:
+        validate_platform_prediction(repeated, last_payload)
+        if repeated["result_point"] != saved["result_point"]:
             raise AssertionError("repeated prediction changed after container recreation")
         print("Persistence test passed: saved result, history and repeated prediction survived recreation.")
         return
@@ -102,19 +77,21 @@ def main() -> None:
     for index, path in enumerate(files, start=1):
         payload = json.loads(path.read_text(encoding="utf-8"))
         status, result = request_json(
-            f"{args.base_url}/api/power/forecast", method="POST", payload=payload
+            f"{args.base_url}{endpoint}", method="POST", payload=payload
         )
-        expected = 200 if index == len(files) else 409
+        expected = 200
         if status != expected:
             raise AssertionError(f"{path.name}: expected HTTP {expected}, got {status}: {result}")
         if index == len(files):
-            validate_prediction(result, payload, model)
+            validate_platform_prediction(result, payload)
+        else:
+            validate_not_ready(result)
         print(f"{path.name}: HTTP {status}")
 
-    status, latest = request_json(f"{args.base_url}/api/power/forecast/latest")
+    status, latest = request_json(f"{args.base_url}{endpoint}/latest")
     if status != 200 or latest != result:
         raise AssertionError(f"latest endpoint does not match the last successful response: {status}")
-    validate_prediction(latest, last_payload, model)
+    validate_platform_prediction(latest, last_payload)
     if args.save_response:
         args.save_response.parent.mkdir(parents=True, exist_ok=True)
         args.save_response.write_text(json.dumps(latest, ensure_ascii=False, indent=2), encoding="utf-8")

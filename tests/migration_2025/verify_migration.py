@@ -26,7 +26,7 @@ from api import ForecastHandler
 from input_adapter import STATION_LOAD_POINTS, STATION_WEATHER_POINTS
 from models.utils import time_feature_frame
 from predict import PowerPredictor
-from history_cache import RealHistoryCache
+from platform_adapter import PLATFORM_PATH, PlatformForecastService
 import build_real_test_payloads as fixture_builder
 import run_api_test as smoke
 import run_rolling_accuracy_test as rolling
@@ -127,6 +127,7 @@ def main():
         class Handler(ForecastHandler):
             pass
         Handler.predictor = predictor
+        Handler.platform_service = PlatformForecastService(predictor)
         Handler.latest_json = Path(temp) / "latest.json"
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -138,24 +139,26 @@ def main():
             rolling.main()
             # Exercise the same fixture generator and HTTP checks used by CI.
             predictor.backend.predict = original_predict
-            predictor.history_cache = RealHistoryCache(Path(temp) / "smoke.csv", state_centers=predictor.backend.station.state_centers,
-                                                       model_name=predictor.model_name)
+            predictor.history_cache = type(predictor.history_cache)(Path(temp) / "smoke.csv",
+                state_centers=predictor.backend.station.state_centers,
+                model_name=predictor.model_name + "__platform_clock_unconfirmed_v1")
             Handler.latest_json = Path(temp) / "smoke_latest.json"
             fixture_dir = Path(temp) / "fixtures"
             fixture_builder.make_payloads(fixture_builder.load_station_frames(ROOT / "tests/real_data_raw"),
                                           fixture_dir, pd.Timestamp("2025-10-12 23:45:00"))
             sys.argv = ["run_api_test.py", "--base-url", f"http://127.0.0.1:{server.server_port}", "--fixture-dir", str(fixture_dir)]
             smoke.main()
-            status, before = smoke.request_json(f"http://127.0.0.1:{server.server_port}/api/power/forecast/latest")
+            status, before = smoke.request_json(f"http://127.0.0.1:{server.server_port}{PLATFORM_PATH}/latest")
             assert status == 200
             last_payload = json.loads((fixture_dir / "day_07.json").read_text(encoding="utf-8"))
             # New cache object models a service restart without erasing state.
-            predictor.history_cache = RealHistoryCache(Path(temp) / "smoke.csv", state_centers=predictor.backend.station.state_centers,
-                                                       model_name=predictor.model_name)
-            status, after = smoke.request_json(f"http://127.0.0.1:{server.server_port}/api/power/forecast", method="POST", payload=last_payload)
-            assert status == 200 and before["data"] == after["data"]
-            invalid = dict(last_payload, intervalMinutes=30)
-            assert smoke.request_json(f"http://127.0.0.1:{server.server_port}/api/power/forecast", method="POST", payload=invalid)[0] == 400
+            predictor.history_cache = type(predictor.history_cache)(Path(temp) / "smoke.csv",
+                state_centers=predictor.backend.station.state_centers,
+                model_name=predictor.model_name + "__platform_clock_unconfirmed_v1")
+            status, after = smoke.request_json(f"http://127.0.0.1:{server.server_port}{PLATFORM_PATH}", method="POST", payload=last_payload)
+            assert status == 200 and before["result_point"] == after["result_point"]
+            invalid = dict(last_payload, frames=last_payload["frames"][:-1])
+            assert smoke.request_json(f"http://127.0.0.1:{server.server_port}{PLATFORM_PATH}", method="POST", payload=invalid)[0] == 400
         finally:
             sys.argv = original_argv
             server.shutdown()
@@ -182,8 +185,9 @@ def main():
     (out / "verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.update_examples:
         samples = out / "rolling_accuracy/samples"
-        for source, destination in (("input_success.json", "input_example.json"), ("output_success.json", "output_example.json"),
-                                    ("output_not_ready_409.json", "output_not_ready_409.json")):
+        for source, destination in (("input_success.json", "platform_input_example.json"), ("output_success.json", "platform_output_example.json"),
+                                    ("input_not_ready.json", "platform_input_not_ready.json"),
+                                    ("output_not_ready.json", "platform_output_not_ready.json")):
             shutil.copy2(samples / source, ROOT / "examples" / destination)
     print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
 

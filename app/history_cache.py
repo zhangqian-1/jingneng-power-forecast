@@ -104,6 +104,10 @@ class RealHistoryCache:
         # Only the continuous suffix with all weather inputs can warm the model.
         weather_missing = history[weather_columns].isna().any(axis=1)
         if weather_missing.any():
+            status["missingWeatherPoints"] = sorted(
+                column.rsplit("::", 1)[-1]
+                for column in weather_columns if history[column].isna().any()
+            )
             history = history.loc[history.index > weather_missing[weather_missing].index[-1]]
             status["continuousPoints"] = int(len(history))
             status["ready"] = len(history) >= self.required_points
