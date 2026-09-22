@@ -4,7 +4,7 @@
 
 本版仅提供平台JSON接口：`POST /api/v1/fluxcast/compute`，输入 `point_table + frames`，输出 `result_point`。`varname` 为 `totalPowerForecast`，`event_key` 沿用 `JNH.Fluxcast.Compute`。历史/天气未就绪返回HTTP 200和空结果，附原因。
 
-**时间规则：用户已确认历史训练数据使用北京时间（`Asia/Shanghai`）。接口输入、输出均为UTC；模型内部转换为北京时间，保持与训练特征一致。输出保留本次请求的时间格式，96帧须使用一致格式。模型权重不变；目标服务器仍需联调验收，此前发布的镜像需重新构建。**
+**时间规则：历史训练数据已确认为北京时间（`Asia/Shanghai`）。接口输入、输出均为UTC；模型内部转换为北京时间，保持与训练特征一致。输出保留本次请求的时间格式，96帧须使用一致格式。模型权重不变；目标服务器仍需联调验收，使用与当前源码提交对应的镜像。**
 
 ## 交接文档
 
@@ -99,4 +99,6 @@ docker compose logs --tail 100 forecast
 
 [GitHub历史发布 v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1) 包含旧接口源码及AMD64/ARM64镜像，当时测试MAPE约10.8778%。它们不包含本次平台适配，不能当作新版镜像使用。下载私有仓库附件需要有权限的账号。
 
-本版代码修改后应重新构建、验证并发布新镜像，使用新的提交号和标签。交付时核对源码、镜像、`release.json` 和 `SHA256SUMS` 对应关系；训练数据北京时间口径已由用户确认，正式上线前仍须完成目标服务器平台联调。
+新版构建通过后，镜像ZIP、ZIP校验文件及测试报告直接保存至 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases)，标签为 `v7station-platform-提交号前12位`，不再依赖Actions产物存储。确认版本后，镜像可另行发布至 [公开下载仓库](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases)，也可将完整ZIP及校验文件直接发给部署人员。公开下载仓库的自动生成 `Source code` 附件只有下载说明，不是算法源码或镜像。
+
+交付时核对源码、镜像、`release.json` 和 `SHA256SUMS` 对应关系，按服务器架构选择一个镜像ZIP。正式上线前仍须完成目标服务器平台联调。

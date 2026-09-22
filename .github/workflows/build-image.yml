@@ -15,7 +15,7 @@ on:
           - arm64
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -29,6 +29,7 @@ jobs:
       POWER_FORECAST_RUNTIME_DIR: /tmp/power-forecast-smoke
       PYTHONDONTWRITEBYTECODE: "1"
       MPLBACKEND: Agg
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
 
     steps:
       - name: Checkout
@@ -248,23 +249,33 @@ jobs:
         run: docker compose -p forecast-import down
 
       - name: Prepare complete offline handover
-        run: python tests/build_offline_delivery.py
+        run: |
+          python tests/build_offline_delivery.py \
+            --archive "tests/results/release/offline-image-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 
-      - name: Upload tested offline image and handover files
-        uses: actions/upload-artifact@v4
-        with:
-          name: offline-image-${{ env.TARGET_ARCH }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tests/results/offline_delivery/
-          include-hidden-files: true
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 14
+      - name: Publish verified files to private Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          RELEASE_TAG="v7station-platform-${GITHUB_SHA:0:12}"
+          REPORT_NAME="container-checks-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python - "$REPORT_NAME" <<'PY'
+          import shutil
+          import sys
+          shutil.make_archive("tests/results/release/" + sys.argv[1], "zip", "tests/results/ci")
+          PY
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --prerelease \
+              --title "Seven-station platform API ${GITHUB_SHA:0:12}" \
+              --notes "Tested architecture-specific offline images and reports. Source commit: $GITHUB_SHA. Target-server acceptance is still required." \
+              || gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          gh release upload "$RELEASE_TAG" tests/results/release/* --repo "$GITHUB_REPOSITORY"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload test results and handover settings
+      - name: Summarize delivery status
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: container-checks-${{ env.TARGET_ARCH }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tests/results/ci/
-          if-no-files-found: warn
-          retention-days: 14
+        run: |
+          echo "Offline delivery is complete only when the private Release upload succeeds. Failed-step details remain in the Actions job log." >> "$GITHUB_STEP_SUMMARY"

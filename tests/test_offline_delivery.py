@@ -3,8 +3,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 
-from build_offline_delivery import build_delivery, sha256
+from build_offline_delivery import archive_delivery, build_delivery, sha256
 
 
 class OfflineDeliveryTests(unittest.TestCase):
@@ -50,6 +51,35 @@ class OfflineDeliveryTests(unittest.TestCase):
         (self.output / "image.tar.gz").unlink()
         with self.assertRaisesRegex(ValueError, "missing or empty"):
             self.build()
+
+    def test_release_zip_keeps_configuration_and_verifiable_image(self):
+        self.build()
+        archive = self.output.parent / "offline-image.zip"
+        checksum = archive_delivery(self.output, archive)
+        self.assertEqual(checksum.read_text().split()[0], sha256(archive))
+        with zipfile.ZipFile(archive) as bundle:
+            self.assertIsNone(bundle.testzip())
+            self.assertIn(".env", bundle.namelist())
+            self.assertIn("docs/接口交接说明.md", bundle.namelist())
+            self.assertEqual(bundle.read("image.tar.gz"), (self.output / "image.tar.gz").read_bytes())
+            self.assertFalse(any(name.startswith(("tests/", "runtime/")) for name in bundle.namelist()))
+
+    def test_release_zip_rejects_changed_or_unchecked_files(self):
+        self.build()
+        archive = self.output.parent / "offline-image.zip"
+        (self.output / ".env").write_text("changed")
+        with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            archive_delivery(self.output, archive)
+        self.assertFalse(archive.exists())
+
+    def test_release_zip_cannot_overwrite_or_include_itself(self):
+        self.build()
+        with self.assertRaisesRegex(ValueError, "outside"):
+            archive_delivery(self.output, self.output / "bundle.zip")
+        archive = self.output.parent / "offline-image.zip"
+        archive_delivery(self.output, archive)
+        with self.assertRaises(FileExistsError):
+            archive_delivery(self.output, archive)
 
     def test_old_delivery_rejected(self):
         (self.output / "old.txt").write_text("old")

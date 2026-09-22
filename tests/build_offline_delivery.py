@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import zipfile
 
 
 IMAGE_FILE = "image.tar.gz"
@@ -77,13 +78,45 @@ def build_delivery(root: Path, ci: Path, output: Path) -> dict:
     return release
 
 
+def archive_delivery(output: Path, archive: Path) -> Path:
+    """Keep the ZIP deployable at its root, including the hidden .env file."""
+    output, archive = output.resolve(), archive.resolve()
+    if output in archive.parents:
+        raise ValueError("ZIP must be outside the delivery directory")
+    checksums = output / "SHA256SUMS"
+    expected = {}
+    for line in checksums.read_text(encoding="utf-8").splitlines():
+        digest, name = line.split("  ", 1)
+        path = (output / name).resolve()
+        if output not in path.parents or not path.is_file() or sha256(path) != digest:
+            raise ValueError(f"Delivery checksum mismatch: {name}")
+        expected[name] = path
+    actual = {path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_file()}
+    if actual != set(expected) | {"SHA256SUMS"}:
+        raise ValueError("Delivery contains unchecked files")
+    required = {IMAGE_FILE, ".env", "compose.yaml", "release.json", "README.md"}
+    if not required <= set(expected):
+        raise ValueError("Delivery is missing required deployment files")
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive, "x", allowZip64=True) as bundle:
+        for name in sorted(actual):
+            compression = zipfile.ZIP_STORED if name == IMAGE_FILE else zipfile.ZIP_DEFLATED
+            bundle.write(output / name, name, compress_type=compression)
+    checksum_path = archive.with_name(archive.name + ".sha256")
+    checksum_path.write_text(f"{sha256(archive)}  {archive.name}\n", encoding="utf-8")
+    return checksum_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ci-dir", type=Path, default=Path("tests/results/ci"))
     parser.add_argument("--output-dir", type=Path, default=Path("tests/results/offline_delivery"))
+    parser.add_argument("--archive", type=Path, help="Optional deployable ZIP outside the output directory")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     release = build_delivery(root, args.ci_dir, args.output_dir)
+    if args.archive:
+        archive_delivery(args.output_dir, args.archive)
     print(json.dumps({"platform": release["platform"], "offline_image": release["offline_image"]}, indent=2))
 
 

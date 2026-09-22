@@ -6,7 +6,7 @@
 
 生产运行不依赖测试集，不进行在线训练。本文面向部署及运维人员；测点、输入输出字段和调用样例见 [接口交接说明](接口交接说明.md) 与 [测点需求清单](测点需求清单.md)。
 
-用户已确认历史训练数据使用北京时间（`Asia/Shanghai`）。本版接口收发UTC，模型内部按北京时间处理，不依赖容器或宿主机时区；响应保留请求的时间格式。目标服务器仍需联调。历史发布 `042dcd1` 的镜像不包含新接口；本次时间适配也须重新构建镜像后交付。
+历史训练数据已确认为北京时间（`Asia/Shanghai`）。本版接口收发UTC，模型内部按北京时间处理，不依赖容器或宿主机时区；响应保留请求的时间格式。目标服务器仍需联调。使用与当前源码提交对应的镜像，历史发布 `042dcd1` 的镜像不包含新接口。
 
 | 项目 | 要求 |
 |---|---|
@@ -131,7 +131,9 @@ docker load -i jingneng-power-forecast.tar
 
 ### A.2 导入配套镜像包
 
-历史镜像下载：[GitHub Release v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1)。这些附件只包含旧接口，不包含本次平台适配。本版须重新构建并发布新的AMD64或ARM64镜像；源码使用对应同一构建提交的版本。私有仓库下载需要有访问权限的GitHub账号；公司接收后转存至指定制品位置。
+从 [公开下载仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases) 获取与交接提交号对应的镜像ZIP及校验文件，或直接接收算法方提供的同一文件。私有 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases) 保存构建原件和测试报告，需要仓库访问权限。旧版 `v7station-2025-042dcd1` 不包含新接口，不能代替新版。
+
+先按同名 `.zip.sha256` 文件或发布页的 `SHA256SUMS` 核对ZIP的SHA256。Linux使用 `sha256sum -c 校验文件名`；Windows使用 `Get-FileHash -Algorithm SHA256 镜像ZIP文件名`。无需把ZIP重新上传GitHub才能部署，可通过公司文件传输渠道直接交付。
 
 将匹配服务器架构的完整镜像包解压至固定目录。包内包含 `image.tar.gz`、`compose.yaml`、`.env`、`release.json` 和 `SHA256SUMS`。在解压目录校验，成功后导入：
 
@@ -161,7 +163,7 @@ docker load -i image.tar.gz
 
 历史Release绑定源码提交 `042dcd1ccd1dd75f22cf9849a1cfffc14a93802e`，本地接口修改不会改变已发布附件。新交付必须使用新标签及对应源码提交，不覆盖旧版校验文件。Release附件不受Actions制品14天保留期限制。
 
-后续构建：GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。工作流全部成功后，从该次运行取得对应的 `offline-image-…` 及 `container-checks-…` 制品，再发布为新版本。GitHub 验证流程不在 GitLab 自动执行。
+后续构建：GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。通过全部测试后，工作流直接将 `offline-image-…zip`、同名 `.sha256` 和 `container-checks-…zip` 上传至私有仓库的 `v7station-platform-提交号前12位` Release。Release中的架构以实际附件为准；红叉或附件缺失时不得视为交付完成。公开下载仓库由交付人员另行同步镜像及校验文件，不发布私有测试报告。GitHub验证流程不在GitLab自动执行。
 
 复测步骤见 [README](../README.md)，使用独立端口和空缓存实例，历史测试集及样例数据不发送到生产服务。`tests/`、`examples/`、`docs/` 属于交接资料，不进入运行镜像。
 
