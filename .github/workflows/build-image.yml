@@ -175,12 +175,15 @@ jobs:
           digests = [value for value in info["RepoDigests"] if value.startswith(repo + "@sha256:")]
           assert len(digests) == 1, "Published image digest is missing or ambiguous"
           assert info["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["GITHUB_SHA"]
+          score = json.loads((out / "rolling_accuracy/summary.json").read_text())
           release = {"image": image, "digest": digests[0], "platform": "linux/" + info["Architecture"],
                      "commit": os.environ["GITHUB_SHA"], "model": "trend_detail_7station_2025_v1",
-                     "platform_contract": "fluxcast_v1", "training_timezone": "unconfirmed",
+                     "platform_contract": "fluxcast_v1", "api_timezone": score["time_basis"]["api"],
+                     "training_timezone": score["time_basis"]["source_csv_and_ts_column"],
+                     "time_policy": score["time_basis"]["time_policy"], "timezone_basis": score["time_basis"]["timezone_basis"],
                      "utc_production_acceptance": "pending",
                      "compose_smoke_test": "passed", "container_recreation_test": "passed",
-                     "metrics": json.loads((out / "rolling_accuracy/summary.json").read_text())["metrics"]}
+                     "metrics": score["metrics"]}
           (out / "release.json").write_text(json.dumps(release, indent=2) + "\n")
           delivery = out / "delivery"
           delivery.mkdir(exist_ok=True)

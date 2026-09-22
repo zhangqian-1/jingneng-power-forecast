@@ -32,6 +32,7 @@ from input_adapter import (  # noqa: E402
     STATION_LOAD_POINTS,
     STATION_WEATHER_POINTS,
 )
+from time_policy import MODEL_TIMEZONE, TIME_POLICY_ID, TIMEZONE_BASIS, TIMESTAMP_FORMAT, model_clock_to_utc, utc_to_model_clock
 
 
 STATION_FILES = {
@@ -110,7 +111,7 @@ def make_payload(
     timeline = pd.date_range(start=start, periods=POINTS_PER_DAY, freq="15min")
     records: list[dict[str, Any]] = []
     for timestamp in timeline:
-        record = {"timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S")}
+        record = {"timestamp": model_clock_to_utc(timestamp).strftime(TIMESTAMP_FORMAT)}
         for station in STATION_FEATURES:
             source = frames[station]
             row = source.loc[timestamp] if timestamp in source.index else None
@@ -181,7 +182,7 @@ def write_plot(result: pd.DataFrame, path: Path) -> None:
         linewidth=1.0,
     )
     axis.set_title("Production API rolling forecast vs actual total power")
-    axis.set_xlabel("Timestamp")
+    axis.set_xlabel("Timestamp (Asia/Shanghai, source CSV clock)")
     axis.set_ylabel("Total power (MW)")
     axis.grid(True, alpha=0.25)
     axis.legend()
@@ -224,7 +225,10 @@ def write_outputs(
         "http_status_counts": config["http_status_counts"],
         "response_accuracy_is_not_used_for_scoring": True,
         "contract": "fluxcast_v1",
-        "time_basis": "original_csv_clock_labels; training_timezone_unconfirmed",
+        "time_basis": {"api": "UTC", "source_csv_and_ts_column": MODEL_TIMEZONE,
+                       "time_policy": TIME_POLICY_ID, "timezone_basis": TIMEZONE_BASIS},
+        "target_start_utc": str(model_clock_to_utc(config["target_start"])),
+        "target_end_utc": str(model_clock_to_utc(config["target_end"])),
     }
     (output_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False),
@@ -240,7 +244,8 @@ def main() -> int:
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--raw-dir", type=Path, default=PACKAGE_ROOT / "tests" / "real_data_raw")
-    parser.add_argument("--target-start", default="2025-10-20 00:00:00")
+    parser.add_argument("--target-start", default="2025-10-20 00:00:00",
+                        help="First target in source CSV Asia/Shanghai time; API traffic uses UTC")
     parser.add_argument("--target-windows", type=int, default=73)
     parser.add_argument("--warmup-days", type=int, default=14)
     parser.add_argument(
@@ -255,6 +260,8 @@ def main() -> int:
     if args.target_windows <= 0 or args.warmup_days <= 0:
         raise ValueError("target-windows and warmup-days must be positive")
     target_start = pd.Timestamp(args.target_start)
+    if target_start.tzinfo is not None:
+        raise ValueError("target-start must use the source CSV's naive Asia/Shanghai clock")
     if target_start.minute % 15 or target_start.second or target_start.microsecond:
         raise ValueError("target-start must be aligned to a 15-minute boundary")
 
@@ -276,7 +283,7 @@ def main() -> int:
         f"Rolling API test: {total_requests} requests, "
         f"{args.warmup_days} warmup + {args.target_windows} prediction windows"
     )
-    print(f"Target range: {target_start} -> {target_end}")
+    print(f"Target range ({MODEL_TIMEZONE}): {target_start} -> {target_end}; API traffic: UTC")
 
     for request_index in range(total_requests):
         request_start = first_request_start + request_index * DAY
@@ -321,7 +328,7 @@ def main() -> int:
         if expected_target_start < target_start:
             continue
         for index, row in enumerate(response["result_point"], start=1):
-            predicted_time = pd.Timestamp(row["timestamp"])
+            predicted_time = utc_to_model_clock(row["timestamp"])
             if predicted_time not in actual_lookup:
                 raise RuntimeError(f"Response timestamp cannot be aligned with actual data: {row}")
             scored_rows.append({
@@ -331,6 +338,7 @@ def main() -> int:
                 "target_date": predicted_time.strftime("%Y-%m-%d"),
                 "horizon_step": index,
                 "ts": predicted_time,
+                "timestamp_utc": row["timestamp"],
                 "actual_total_power": float(actual_lookup[predicted_time]),
                 "predicted_power": row["value"],
             })

@@ -17,6 +17,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
 from input_adapter import STATION_FEATURES, STATION_LOAD_POINTS, STATION_WEATHER_POINTS
+from time_policy import MODEL_TIMEZONE, TIMESTAMP_FORMAT, model_clock_to_utc
 
 
 STATION_FILES = {
@@ -71,7 +72,7 @@ def make_payloads(frames: dict[str, pd.DataFrame], output_dir: Path, end: pd.Tim
         day_index = timeline[day * 96 : (day + 1) * 96]
         records = []
         for ts in day_index:
-            record = {"timestamp": ts.strftime("%Y-%m-%d %H:%M:%S")}
+            record = {"timestamp": model_clock_to_utc(ts).strftime(TIMESTAMP_FORMAT)}
             for station in STATION_FEATURES:
                 source = frames[station]
                 if ts in source.index:
@@ -113,13 +114,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--raw-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--end-time", type=str, default=None)
+    parser.add_argument("--end-time", type=str, default=None,
+                        help="Last source CSV time in Asia/Shanghai (requests are exported as UTC)")
     args = parser.parse_args()
 
     frames = load_station_frames(args.raw_dir)
     end = pd.Timestamp(args.end_time) if args.end_time else latest_common_timestamp(frames)
+    if end.tzinfo is not None:
+        raise ValueError("end-time must use the source CSV's naive Asia/Shanghai clock")
     make_payloads(frames, args.output_dir, end.floor("15min"))
-    print(f"Generated seven real-data requests ending at {end:%Y-%m-%d %H:%M:%S}")
+    print(f"Generated seven UTC requests; source end={end} {MODEL_TIMEZONE}; API end={model_clock_to_utc(end)} UTC")
 
 
 if __name__ == "__main__":

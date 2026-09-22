@@ -11,6 +11,7 @@ import pandas as pd
 import torch
 
 from history_cache import RealHistoryCache
+from time_policy import TIME_POLICY_ID
 from input_adapter import InputAdapter, STATION_FEATURES, STATION_LOAD_POINTS
 from models.normalizer import Normalizer
 from models.station_attention import StationAttentionHF
@@ -27,7 +28,7 @@ from models.causal_state import add_causal_states
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = PACKAGE_ROOT / "models" / "active_model.json"
-DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_7station_2025_v1_platform_unconfirmed_v1.csv"
+DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_7station_2025_v1_utc_to_asia_shanghai_v1.csv"
 
 
 def _sha256(path: Path) -> str:
@@ -286,7 +287,7 @@ class PowerPredictor:
             cache_path=history_cache_path,
             required_points=self.input_size,
             state_centers=self.backend.station.state_centers,
-            model_name=self.model_name + "__platform_clock_unconfirmed_v1",
+            model_name=self.model_name + "__" + TIME_POLICY_ID,
         )
         self.input_adapter = InputAdapter()
 

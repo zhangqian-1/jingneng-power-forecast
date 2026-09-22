@@ -12,10 +12,11 @@ from urllib.parse import urlparse
 from input_adapter import InputValidationError
 from predict import DEFAULT_HISTORY_CACHE, DEFAULT_MODEL_PATH, PowerPredictor
 from platform_adapter import PLATFORM_PATH, PlatformForecastService, empty_result
+from time_policy import MODEL_TIMEZONE, TIME_POLICY_ID, TIMEZONE_BASIS
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_LATEST_JSON = PACKAGE_ROOT / "runtime" / "latest_forecast_platform.json"
+DEFAULT_LATEST_JSON = PACKAGE_ROOT / "runtime" / "latest_forecast_utc_to_asia_shanghai_v1.json"
 MAX_REQUEST_BYTES = 50 * 1024 * 1024
 LOGGER = logging.getLogger(__name__)
 
@@ -92,7 +93,8 @@ class ForecastHandler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(self.latest_json.read_text(encoding="utf-8"))
             if (payload.get("model") != self.predictor.model_name
-                    or payload.get("training_timezone") != "unconfirmed"
+                    or payload.get("training_timezone") != MODEL_TIMEZONE
+                    or payload.get("time_policy") != TIME_POLICY_ID
                     or "response" not in payload):
                 self.send_json(404, empty_result("no_forecast", "当前模型尚无平台预测结果"))
                 return
@@ -106,7 +108,8 @@ class ForecastHandler(BaseHTTPRequestHandler):
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(
-            {"model": self.predictor.model_name, "training_timezone": "unconfirmed", "response": payload},
+            {"model": self.predictor.model_name, "training_timezone": MODEL_TIMEZONE,
+             "time_policy": TIME_POLICY_ID, "timezone_basis": TIMEZONE_BASIS, "response": payload},
             ensure_ascii=False, indent=2, allow_nan=False,
         ), encoding="utf-8")
         temporary.replace(path)
@@ -141,7 +144,8 @@ def main() -> None:
     print(f"Power forecast API: http://{args.host}:{args.port}")
     print(f"POST {PLATFORM_PATH}")
     print(f"GET  {PLATFORM_PATH}/latest")
-    LOGGER.warning("Training timezone is unconfirmed. Platform clock labels are preserved; UTC production acceptance is pending.")
+    LOGGER.info("API timezone=UTC; model timezone=%s; policy=%s; basis=%s",
+                MODEL_TIMEZONE, TIME_POLICY_ID, TIMEZONE_BASIS)
     server.serve_forever()
 
 

@@ -41,7 +41,7 @@ class RealHistoryCache:
             cached = pd.read_csv(self.cache_path)
             cached["ts"] = pd.to_datetime(cached["ts"])
             if "__model" not in cached or not cached["__model"].eq(self.model_name).all():
-                raise InputValidationError("历史缓存属于其他模型，请为本版本使用独立的空缓存目录")
+                raise InputValidationError("历史缓存的模型或时间规则不匹配，请为本版本使用独立的空缓存目录")
             if incoming["ts"].iloc[-1] < cached["ts"].iloc[-1]:
                 raise InputValidationError("不接受早于缓存末端的旧批次，避免使用未来历史预测过去")
             if incoming["ts"].iloc[0] < cached["ts"].iloc[0]:

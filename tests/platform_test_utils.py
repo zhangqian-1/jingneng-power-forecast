@@ -13,8 +13,10 @@ def validate_platform_prediction(result: dict, payload: dict) -> None:
     if not isinstance(rows, list) or len(rows) != 96:
         raise AssertionError("Platform result must contain 96 predictions")
     cutoff = max(datetime.fromisoformat(row["timestamp"]) for row in payload["frames"])
+    sample = payload["frames"][0]["timestamp"]
     for index, row in enumerate(rows, start=1):
         target = (cutoff + timedelta(minutes=15 * index)).strftime("%Y-%m-%d %H:%M:%S")
+        target = target[:10] + sample[10] + target[11:] + sample[19:]
         if row.get("varname") != "totalPowerForecast" or row.get("timestamp") != target:
             raise AssertionError("Incorrect platform variable or target timestamp")
         if type(row.get("value")) is not float or not math.isfinite(row["value"]):

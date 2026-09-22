@@ -4,7 +4,7 @@
 
 本版仅提供平台JSON接口：`POST /api/v1/fluxcast/compute`，输入 `point_table + frames`，输出 `result_point`。`varname` 为 `totalPowerForecast`，`event_key` 沿用 `JNH.Fluxcast.Compute`。历史/天气未就绪返回HTTP 200和空结果，附原因。
 
-**当前限制：离线CSV时区待数据提供方确认。程序暂保留输入钟面时间，不加减8小时。接口格式和原始数据回放可以验证，UTC生产时间对齐尚未验收。此前GitHub发布的镜像没有本次接口改动，需要另行构建新版本。**
+**时间规则：用户已确认历史训练数据使用北京时间（`Asia/Shanghai`）。接口输入、输出均为UTC；模型内部转换为北京时间，保持与训练特征一致。输出保留本次请求的时间格式，96帧须使用一致格式。模型权重不变；目标服务器仍需联调验收，此前发布的镜像需重新构建。**
 
 ## 交接文档
 
@@ -22,6 +22,7 @@
 | 路径 | 用途 |
 |---|---|
 | `app/api.py`、`app/platform_adapter.py` | HTTP路由、平台输入输出适配、空结果和日志 |
+| `app/time_policy.py` | UTC与模型北京时间转换、缓存时间规则版本 |
 | `app/input_adapter.py`、`app/history_cache.py` | 测点、特征、缺失处理及历史缓存 |
 | `app/predict.py`、`app/models/` | 预测计算代码 |
 | `models/active_model.json`、`models/versions/` | 当前模型配置与训练权重，必须保留 |
@@ -46,7 +47,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/fluxcast/compute" -H "Content-Type: a
 curl "http://127.0.0.1:8000/api/v1/fluxcast/compute/latest"
 ```
 
-Windows使用 `curl.exe`；跨机器地址由部署方提供，Compose默认仅监听本机。样例是实际CSV回放，时间口径仍待确认；空缓存只提交一天样例不会产生预测。
+Windows使用 `curl.exe`；跨机器地址由部署方提供，Compose默认仅监听本机。样例由实际CSV的北京时间换算为UTC；空缓存只提交一天样例不会产生预测。平台已经发送UTC时，无需再手动加减8小时。
 
 ## 检查与测试
 
@@ -61,7 +62,7 @@ python -m unittest discover -s tests/migration_2025 -p "test_*.py" -v
 python tests/run_platform_verification.py --output-dir tests/results/platform_adapter/check_01
 ```
 
-最后一条会自行启动和关闭本机测试服务，使用独立缓存，验证平台接口、旧路由已移除、异常输入、重启恢复，以及2025-10-20至12-31共73天/7008点的滚动预测与MAPE。输出目录必须不存在，复测换新目录。结果见 `verification.json`，不会连接生产服务或修改模型。
+最后一条会自行启动和关闭本机测试服务，使用独立缓存，验证平台接口、旧路由已移除、异常输入、重启恢复、旧时间规则结果隔离，以及北京时间2025-10-20至12-31共73天/7008点的滚动预测与MAPE。请求先换算为UTC，评分再与原始时间对齐。输出目录必须不存在，复测换新目录。结果见 `verification.json`，不会连接生产服务或修改模型。
 
 已有独立测试服务时也可执行：
 
@@ -69,7 +70,7 @@ python tests/run_platform_verification.py --output-dir tests/results/platform_ad
 python tests/run_rolling_accuracy_test.py --base-url http://127.0.0.1:18000 --output-dir tests/results/platform_adapter/score_01
 ```
 
-该测试服务必须从空缓存开始。原CSV时间标签下的MAPE不等于实时平台UTC对齐验收。
+该测试服务必须从空缓存开始。脚本的 `--target-start`、测点样例生成器的 `--end-time` 均按原CSV北京时间填写，发送的JSON自动换算为UTC。评分CSV的 `ts` 保留北京时间，`timestamp_utc` 为接口返回时间；历史回放不替代实时平台验收。
 
 ## 构建与启动
 
@@ -98,4 +99,4 @@ docker compose logs --tail 100 forecast
 
 [GitHub历史发布 v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1) 包含旧接口源码及AMD64/ARM64镜像，当时测试MAPE约10.8778%。它们不包含本次平台适配，不能当作新版镜像使用。下载私有仓库附件需要有权限的账号。
 
-本版代码修改后应重新构建、验证并发布新镜像，使用新的提交号和标签。交付时核对源码、镜像、`release.json` 和 `SHA256SUMS` 对应关系；正式上线前确认训练时间口径并完成目标服务器平台联调。
+本版代码修改后应重新构建、验证并发布新镜像，使用新的提交号和标签。交付时核对源码、镜像、`release.json` 和 `SHA256SUMS` 对应关系；训练数据北京时间口径已由用户确认，正式上线前仍须完成目标服务器平台联调。

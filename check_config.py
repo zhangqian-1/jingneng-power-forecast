@@ -21,6 +21,7 @@ def main() -> int:
         APP_DIR / "input_adapter.py",
         APP_DIR / "history_cache.py",
         APP_DIR / "platform_adapter.py",
+        APP_DIR / "time_policy.py",
         APP_DIR / "models" / "trend_detail.py",
     ]
     for path in required_files:
@@ -94,7 +95,7 @@ def main() -> int:
     print("- 全部版本化模型文件哈希校验通过")
     print("- 外部每次提交96点，缓存至少672点（最多保留768点上下文）后输出96点")
     print("- 未发现示例输入、静态预测或模拟数据生成逻辑")
-    print("- 平台接口已适配；训练数据时区未确认，本检查不代表UTC生产接入验收")
+    print("- 接口收发UTC，模型内部按Asia/Shanghai处理；本检查不代表目标服务器接入验收")
     return 0
 
 

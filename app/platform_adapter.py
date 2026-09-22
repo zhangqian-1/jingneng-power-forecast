@@ -1,4 +1,4 @@
-"""Platform JSON contract; training-timezone verification remains pending."""
+"""Platform JSON contract with UTC/model-clock conversion at the boundary."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from history_cache import HistoryNotReadyError
+from time_policy import TIMESTAMP_FORMAT, model_clock_to_utc, request_timestamp_format, utc_to_model_clock
 from input_adapter import (
     InputValidationError,
     POINTS_PER_DAY,
@@ -45,7 +46,7 @@ def empty_result(reason: str, message: str, **details: Any) -> dict[str, Any]:
 
 
 def to_model_payload(payload: Any) -> dict[str, Any]:
-    """Map all 35 raw point IDs without shifting the incoming clock labels."""
+    """Map all 35 raw point IDs and convert UTC to the existing model clock."""
     if not isinstance(payload, Mapping):
         raise InputValidationError("请求体必须是 JSON 对象")
     table = payload.get("point_table")
@@ -62,6 +63,7 @@ def to_model_payload(payload: Any) -> dict[str, Any]:
         raise InputValidationError("frames 必须正好包含96条时间记录")
 
     records = []
+    timestamp_format = None
     allowed = set(POINT_TABLE) | {"timestamp"}
     for index, frame in enumerate(frames):
         if not isinstance(frame, Mapping):
@@ -80,8 +82,14 @@ def to_model_payload(payload: Any) -> dict[str, Any]:
         if timestamp.tzinfo is not None:
             if timestamp.utcoffset() != timedelta(0):
                 raise InputValidationError("平台 timestamp 必须使用UTC；不接受非零时区偏移")
-            timestamp = timestamp.tz_localize(None)
-        # Only remove an explicit zero offset. Do not guess the training timezone.
+        try:
+            frame_format = request_timestamp_format(raw)
+        except ValueError as exc:
+            raise InputValidationError(f"frames[{index}].timestamp 必须使用完整年月日时分秒及UTC格式") from exc
+        if timestamp_format is not None and frame_format != timestamp_format:
+            raise InputValidationError("同一请求的96帧 timestamp 格式必须一致，包括分隔符、小数位数和UTC后缀")
+        timestamp_format = frame_format
+        timestamp = utc_to_model_clock(timestamp)
         stations = {
             station: {
                 "load_points": {point: frame.get(point) for point in STATION_LOAD_POINTS[station]},
@@ -93,7 +101,7 @@ def to_model_payload(payload: Any) -> dict[str, Any]:
     return {"data": records}
 
 
-def to_platform_result(result: dict[str, Any]) -> dict[str, Any]:
+def to_platform_result(result: dict[str, Any], timestamp_format: str = TIMESTAMP_FORMAT) -> dict[str, Any]:
     rows = result["predictions"]
     if len(rows) != POINTS_PER_DAY:
         raise ValueError("Expected 96 model predictions")
@@ -102,8 +110,8 @@ def to_platform_result(result: dict[str, Any]) -> dict[str, Any]:
         power = float(row["value"])
         if not math.isfinite(power):
             raise ValueError("Model returned a non-finite prediction")
-        timestamp = pd.to_datetime(row["timestamp"], format="%Y-%m-%d %H:%M:%S")
-        points.append({"varname": VARNAME, "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"), "value": power})
+        timestamp = model_clock_to_utc(pd.to_datetime(row["timestamp"], format=TIMESTAMP_FORMAT))
+        points.append({"varname": VARNAME, "timestamp": timestamp.strftime(timestamp_format), "value": power})
     if len({point["timestamp"] for point in points}) != POINTS_PER_DAY:
         raise ValueError("Model returned duplicate prediction timestamps")
     return {"result_point": points, "event_key": EVENT_KEY}
@@ -137,4 +145,4 @@ class PlatformForecastService:
         quality = result["inputQuality"]
         if quality["submittedMissingLoadValues"] or quality["submittedMissingWeatherValues"]:
             LOGGER.warning("prediction_with_missing_measurements quality=%s", quality)
-        return to_platform_result(result)
+        return to_platform_result(result, request_timestamp_format(payload["frames"][0]["timestamp"]))

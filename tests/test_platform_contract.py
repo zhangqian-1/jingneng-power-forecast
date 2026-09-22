@@ -1,5 +1,6 @@
 """Contract and missing-data edge cases; fixture values are not accuracy data."""
 import copy
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import sys
@@ -18,13 +19,19 @@ from history_cache import HistoryNotReadyError, RealHistoryCache
 from input_adapter import InputAdapter, InputValidationError, STATION_LOAD_POINTS, STATION_WEATHER_POINTS
 from platform_adapter import POINT_TABLE, PlatformForecastService, to_model_payload, to_platform_result
 from platform_test_utils import validate_platform_prediction
+from time_policy import TIME_POLICY_ID
+
+
+def expected_beijing(utc_label):
+    # Independent oracle for the modern Chinese timestamps in the test data.
+    return (datetime.fromisoformat(utc_label) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class PlatformContractTests(unittest.TestCase):
     def setUp(self):
         self.payload = json.loads((ROOT / "examples/platform_input_example.json").read_text(encoding="utf-8"))
         self.records = {"data": [
-            {"ts": row["timestamp"], "stations": {
+            {"ts": expected_beijing(row["timestamp"]), "stations": {
                 station: {
                     "load_points": {point: row.get(point) for point in STATION_LOAD_POINTS[station]},
                     "weather_points": {point: row.get(point) for point in STATION_WEATHER_POINTS[station]},
@@ -50,15 +57,109 @@ class PlatformContractTests(unittest.TestCase):
             self.adapter.parse_json(self.records).frame,
         )
 
-    def test_utc_labels_preserved_and_nonzero_offset_rejected(self):
+    def test_utc_spellings_equivalent_and_nonzero_offset_rejected(self):
         original = copy.deepcopy(self.payload)
         for row in self.payload["frames"]:
             row["timestamp"] = row["timestamp"].replace(" ", "T") + "Z"
         actual = to_model_payload(self.payload)
         self.assertEqual(actual, to_model_payload(original))
+        for row in self.payload["frames"]:
+            row["timestamp"] = row["timestamp"].replace("Z", "+00:00")
+        self.assertEqual(actual, to_model_payload(self.payload))
         self.payload["frames"][0]["timestamp"] = "2025-10-19T00:00:00+08:00"
         with self.assertRaises(InputValidationError):
             to_model_payload(self.payload)
+
+    def test_calendar_boundaries_and_forecast_round_trip(self):
+        self._initialize_unit_weather()
+        cases = [("2025-10-19 16:00:00", "2025-10-20 00:00:00"),
+                 ("2025-12-31 16:00:00", "2026-01-01 00:00:00"),
+                 ("2025-01-31 16:00:00", "2025-02-01 00:00:00"),
+                 ("2024-02-28 16:00:00", "2024-02-29 00:00:00")]
+        from models.utils import time_feature_frame
+        for start, local_start in cases:
+            with self.subTest(start=start):
+                payload = copy.deepcopy(self.payload)
+                for row, timestamp in zip(payload["frames"], pd.date_range(start, periods=96, freq="15min")):
+                    row["timestamp"] = str(timestamp)
+                internal = to_model_payload(payload)
+                self.assertEqual(internal["data"][0]["ts"], local_start)
+                parsed = self.adapter.parse_json(internal)
+                expected_times = pd.date_range(local_start, periods=96, freq="15min")
+                np.testing.assert_array_equal(parsed.frame.ts.to_numpy(), expected_times.to_numpy())
+                expected_features = time_feature_frame(expected_times)
+                feature_frame, _ = RealHistoryCache(self.cache_path.with_name(start[:10] + ".csv"),
+                                                   required_points=96).merge(parsed)
+                pd.testing.assert_frame_equal(feature_frame[expected_features.columns].reset_index(drop=True),
+                                              expected_features.reset_index(drop=True), check_dtype=False)
+                future = pd.date_range(expected_times[-1] + pd.Timedelta(minutes=15), periods=96, freq="15min")
+                response = to_platform_result({"predictions": [{"timestamp": str(ts), "value": 1.0} for ts in future]})
+                validate_platform_prediction(response, payload)
+
+    def test_service_preserves_request_format_and_prediction_values(self):
+        example = json.loads((ROOT / "examples/platform_output_example.json").read_text(encoding="utf-8"))
+        result_rows = {"predictions": [{"timestamp": expected_beijing(row["timestamp"]), "value": row["value"]}
+                                       for row in example["result_point"]],
+                       "inputQuality": {"submittedMissingLoadValues": 0, "submittedMissingWeatherValues": 0}}
+        predictor = SimpleNamespace(predict_records=Mock(return_value=result_rows))
+        service = PlatformForecastService(predictor)
+        for separator in (" ", "T"):
+            for suffix in ("", "Z", "+00:00", "+0000"):
+                for fraction in ("", ".0", ".000", ".000000", ".000000000"):
+                    with self.subTest(separator=separator, suffix=suffix, fraction=fraction):
+                        payload = copy.deepcopy(self.payload)
+                        for row in payload["frames"]:
+                            row["timestamp"] = row["timestamp"].replace(" ", separator) + fraction + suffix
+                        payload["frames"].reverse()
+                        response = service.compute(payload)
+                        validate_platform_prediction(response, payload)
+                        self.assertEqual([row["value"] for row in response["result_point"]],
+                                         [row["value"] for row in example["result_point"]])
+                        self.assertEqual(predictor.predict_records.call_args.args[0], to_model_payload(payload))
+
+    def test_mixed_or_unsupported_formats_rejected_before_prediction(self):
+        predictor = SimpleNamespace(predict_records=Mock())
+        service = PlatformForecastService(predictor)
+        first = self.payload["frames"][0]["timestamp"]
+        for timestamp in (first.replace(" ", "T"), first + "Z", first + ".000", first[:-3],
+                          first.replace("-", "/"), " " + first, first + " ", first + ".000000001"):
+            with self.subTest(timestamp=timestamp):
+                payload = copy.deepcopy(self.payload)
+                payload["frames"][0]["timestamp"] = timestamp
+                with self.assertRaises(InputValidationError):
+                    service.compute(payload)
+        predictor.predict_records.assert_not_called()
+
+    def test_format_is_request_local_including_calendar_boundaries(self):
+        predictor = SimpleNamespace(predict_records=Mock())
+        service = PlatformForecastService(predictor)
+        for cutoff, expected in (("2025-12-31 23:45:00", "2026-01-01 00:00:00"),
+                                 ("2025-01-31 23:45:00", "2025-02-01 00:00:00"),
+                                 ("2024-02-28 23:45:00", "2024-02-29 00:00:00")):
+            for separator, suffix in (("T", "Z"), ("T", "+00:00"), (" ", "")):
+                with self.subTest(cutoff=cutoff, suffix=suffix):
+                    payload = copy.deepcopy(self.payload)
+                    for row, timestamp in zip(payload["frames"], pd.date_range(end=cutoff, periods=96, freq="15min")):
+                        row["timestamp"] = str(timestamp).replace(" ", separator) + suffix
+                    future = pd.date_range(expected_beijing(expected), periods=96, freq="15min")
+                    predictor.predict_records.return_value = {
+                        "predictions": [{"timestamp": str(ts), "value": 1.0} for ts in future],
+                        "inputQuality": {"submittedMissingLoadValues": 0, "submittedMissingWeatherValues": 0},
+                    }
+                    response = service.compute(payload)
+                    self.assertEqual(response["result_point"][0]["timestamp"], expected.replace(" ", separator) + suffix)
+                    validate_platform_prediction(response, payload)
+
+    def test_previous_time_policy_cache_rejected_without_mutation(self):
+        self._initialize_unit_weather()
+        parsed = self.adapter.parse_json(to_model_payload(self.payload))
+        RealHistoryCache(self.cache_path, required_points=96,
+                         model_name="unit__platform_clock_unconfirmed_v1").merge(parsed)
+        before = self.cache_path.read_bytes()
+        with self.assertRaises(InputValidationError):
+            RealHistoryCache(self.cache_path, required_points=96,
+                             model_name="unit__" + TIME_POLICY_ID).merge(parsed)
+        self.assertEqual(self.cache_path.read_bytes(), before)
 
     def test_missing_duplicate_and_unknown_table_points_rejected(self):
         for table in (POINT_TABLE[:-1], POINT_TABLE + [POINT_TABLE[0]], POINT_TABLE + ["unknown"]):
@@ -140,7 +241,7 @@ class PlatformContractTests(unittest.TestCase):
 
     def test_response_mapping_preserves_real_prediction_values(self):
         example = json.loads((ROOT / "examples/platform_output_example.json").read_text(encoding="utf-8"))
-        result_rows = {"predictions": [{"timestamp": row["timestamp"], "value": row["value"]}
+        result_rows = {"predictions": [{"timestamp": expected_beijing(row["timestamp"]), "value": row["value"]}
                                        for row in example["result_point"]]}
         result = to_platform_result(result_rows)
         validate_platform_prediction(result, self.payload)
@@ -163,7 +264,7 @@ class PlatformContractTests(unittest.TestCase):
 
     def test_invalid_output_count_or_duplicate_target_rejected(self):
         example = json.loads((ROOT / "examples/platform_output_example.json").read_text(encoding="utf-8"))
-        result_rows = {"predictions": [{"timestamp": row["timestamp"], "value": row["value"]}
+        result_rows = {"predictions": [{"timestamp": expected_beijing(row["timestamp"]), "value": row["value"]}
                                        for row in example["result_point"]]}
         with self.assertRaises(ValueError):
             to_platform_result({"predictions": result_rows["predictions"][:-1]})

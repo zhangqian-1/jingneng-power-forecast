@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -10,11 +11,15 @@ import socket
 import subprocess
 import sys
 
-from platform_test_utils import PLATFORM_PATH, validate_not_ready
+import pandas as pd
+
+from platform_test_utils import PLATFORM_PATH, validate_not_ready, validate_platform_prediction
 from run_api_test import request_json, wait_until_ready
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app"))
+from time_policy import MODEL_TIMEZONE, TIME_POLICY_ID, TIMEZONE_BASIS
 
 
 def write_json(path: Path, value) -> None:
@@ -51,6 +56,11 @@ def run(*args: str) -> None:
     subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, check=True)
 
 
+def with_timestamp_format(payload: dict, separator: str, suffix: str) -> dict:
+    return dict(payload, frames=[dict(row, timestamp=row["timestamp"].replace(" ", separator) + suffix)
+                                 for row in payload["frames"]])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -74,7 +84,9 @@ def main() -> None:
             assert request_json(url + old_route, "POST", {})[0] == 404
         before = (smoke / "platform.csv").read_bytes()
         payload = json.loads((fixtures / "day_07.json").read_text(encoding="utf-8"))
-        for value in ([], {}, dict(payload, frames=payload["frames"][:-1])):
+        mixed = with_timestamp_format(payload, "T", "Z")
+        mixed["frames"][0]["timestamp"] = payload["frames"][0]["timestamp"]
+        for value in ([], {}, dict(payload, frames=payload["frames"][:-1]), mixed):
             status, response = request_json(url + PLATFORM_PATH, "POST", value)
             assert status == 400 and response["reason"] == "invalid_request", response
         assert (smoke / "platform.csv").read_bytes() == before
@@ -82,7 +94,22 @@ def main() -> None:
         assert request_json(url + PLATFORM_PATH, "POST", json.loads((fixtures / "day_01.json").read_text(encoding="utf-8")))[0] == 400
         assert (smoke / "platform.csv").read_bytes() == before
         last_result = request_json(url + PLATFORM_PATH + "/latest")[1]
-        unavailable = dict(payload, frames=[dict(row, timestamp=row["timestamp"].replace("2025-10-12", "2025-10-14"))
+        cached_frame = pd.read_csv(smoke / "platform.csv")
+        formats = [(" ", ""), ("T", ""), ("T", "Z"), ("T", "+00:00"),
+                   (" ", "+00:00"), ("T", ".000Z"), ("T", ".000000000+00:00"), ("T", "+0000")]
+        for separator, suffix in formats:
+            formatted = with_timestamp_format(payload, separator, suffix)
+            status, response = request_json(url + PLATFORM_PATH, "POST", formatted)
+            assert status == 200, response
+            validate_platform_prediction(response, formatted)
+            assert [row["value"] for row in response["result_point"]] == [row["value"] for row in last_result["result_point"]]
+            pd.testing.assert_frame_equal(pd.read_csv(smoke / "platform.csv"), cached_frame,
+                                          check_exact=False, rtol=1e-12, atol=1e-12)
+            assert request_json(url + PLATFORM_PATH + "/latest")[1] == response
+            last_result = response
+        write_json(output / "samples/input_iso8601.json", formatted)
+        write_json(output / "samples/output_iso8601.json", response)
+        unavailable = dict(payload, frames=[dict(row, timestamp=(datetime.fromisoformat(row["timestamp"]) + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S"))
                                             for row in payload["frames"]])
         status, response = request_json(url + PLATFORM_PATH, "POST", unavailable)
         assert status == 200
@@ -91,12 +118,25 @@ def main() -> None:
     # Restart checks use the saved seven-day cache before introducing a gap.
     # Repeat on a fresh directory so the preceding negative check stays isolated.
     restart = output / "restart"
+    iso_fixtures = output / "fixtures_iso8601"
+    for path in sorted(fixtures.glob("day_*.json")):
+        write_json(iso_fixtures / path.name, with_timestamp_format(json.loads(path.read_text(encoding="utf-8")), "T", "Z"))
     with server(restart) as url:
-        run("tests/run_api_test.py", "--base-url", url, "--fixture-dir", fixtures,
+        run("tests/run_api_test.py", "--base-url", url, "--fixture-dir", iso_fixtures,
             "--save-response", output / "platform_restart.json")
     with server(restart) as url:
-        run("tests/run_api_test.py", "--base-url", url, "--fixture-dir", fixtures,
+        run("tests/run_api_test.py", "--base-url", url, "--fixture-dir", iso_fixtures,
             "--verify-restored", output / "platform_restart.json")
+        latest_path = restart / "platform_latest.json"
+        saved = json.loads(latest_path.read_text(encoding="utf-8"))
+        assert saved["time_policy"] == TIME_POLICY_ID and saved["training_timezone"] == MODEL_TIMEZONE
+        for stale in (dict(saved, training_timezone="unconfirmed", time_policy="platform_clock_unconfirmed_v1"),
+                      {key: value for key, value in saved.items() if key != "time_policy"}):
+            write_json(latest_path, stale)
+            status, response = request_json(url + PLATFORM_PATH + "/latest")
+            assert status == 404 and response["reason"] == "no_forecast"
+        write_json(latest_path, saved)
+        assert request_json(url + PLATFORM_PATH + "/latest")[1] == saved["response"]
     with server(output / "weather") as url:
         # Deliberately remove a real weather point to exercise the missing-data contract.
         weather_payload = json.loads((fixtures / "day_01.json").read_text(encoding="utf-8"))
@@ -116,8 +156,11 @@ def main() -> None:
     assert summary["metrics"]["points"] == 7008
     assert abs(summary["metrics"]["mape_percent"] - manifest["test_metrics"]["mape"]) <= 0.01
     result = {"local_http_tests": "passed", "restart_tests": "passed", "invalid_request_cache_checks": "passed",
-              "weather_not_ready": "passed", "removed_routes": "passed",
-              "metrics": summary["metrics"], "training_timezone": "unconfirmed",
+              "weather_not_ready": "passed", "removed_routes": "passed", "stale_latest_policy_rejected": "passed",
+              "timestamp_format_preservation": "passed", "format_cases": len(formats),
+              "format_prediction_and_cache_parity": "passed", "iso_latest_restart": "passed",
+              "metrics": summary["metrics"], "training_timezone": MODEL_TIMEZONE,
+              "time_policy": TIME_POLICY_ID, "timezone_basis": TIMEZONE_BASIS,
               "utc_production_acceptance": "pending", "docker_validation": "not_run"}
     write_json(output / "verification.json", result)
     print(json.dumps(result, indent=2))

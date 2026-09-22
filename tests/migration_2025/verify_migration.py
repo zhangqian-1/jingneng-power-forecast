@@ -27,6 +27,7 @@ from input_adapter import STATION_LOAD_POINTS, STATION_WEATHER_POINTS
 from models.utils import time_feature_frame
 from predict import PowerPredictor
 from platform_adapter import PLATFORM_PATH, PlatformForecastService
+from time_policy import MODEL_TIMEZONE, TIME_POLICY_ID, TIMEZONE_BASIS
 import build_real_test_payloads as fixture_builder
 import run_api_test as smoke
 import run_rolling_accuracy_test as rolling
@@ -141,7 +142,7 @@ def main():
             predictor.backend.predict = original_predict
             predictor.history_cache = type(predictor.history_cache)(Path(temp) / "smoke.csv",
                 state_centers=predictor.backend.station.state_centers,
-                model_name=predictor.model_name + "__platform_clock_unconfirmed_v1")
+                model_name=predictor.model_name + "__" + TIME_POLICY_ID)
             Handler.latest_json = Path(temp) / "smoke_latest.json"
             fixture_dir = Path(temp) / "fixtures"
             fixture_builder.make_payloads(fixture_builder.load_station_frames(ROOT / "tests/real_data_raw"),
@@ -154,7 +155,7 @@ def main():
             # New cache object models a service restart without erasing state.
             predictor.history_cache = type(predictor.history_cache)(Path(temp) / "smoke.csv",
                 state_centers=predictor.backend.station.state_centers,
-                model_name=predictor.model_name + "__platform_clock_unconfirmed_v1")
+                model_name=predictor.model_name + "__" + TIME_POLICY_ID)
             status, after = smoke.request_json(f"http://127.0.0.1:{server.server_port}{PLATFORM_PATH}", method="POST", payload=last_payload)
             assert status == 200 and before["result_point"] == after["result_point"]
             invalid = dict(last_payload, frames=last_payload["frames"][:-1])
@@ -177,6 +178,8 @@ def main():
               "active_version": active["version"], "artifact_hashes_match_offline": artifact_hashes,
               "fusion_parameters_match_offline": True, "raw_csv_hashes_match_training_sources": True,
               "scoring_targets_match_offline": True, "examples_updated": args.update_examples,
+              "api_timezone": "UTC", "training_timezone": MODEL_TIMEZONE,
+              "time_policy": TIME_POLICY_ID, "timezone_basis": TIMEZONE_BASIS,
               "test_points": 7008, "max_absolute_difference_vs_offline": max_errors,
               "offline_files_verified_unchanged": len(protected), "retrained": False,
               "container_built": False, "github_uploaded": False,
