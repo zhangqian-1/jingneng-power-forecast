@@ -15,20 +15,14 @@ from time_policy import TIME_POLICY_ID
 from input_adapter import InputAdapter, STATION_FEATURES, STATION_LOAD_POINTS
 from models.normalizer import Normalizer
 from models.station_attention import StationAttentionHF
-from models.trend_detail import (
-    NeuralForecastComponent,
-    apply_calibration,
-    blend,
-    level_shape_fusion,
-    trend_detail_fusion,
-)
+from models.neural_forecast import NeuralForecastComponent
 from models.utils import time_feature_frame
 from models.causal_state import add_causal_states
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = PACKAGE_ROOT / "models" / "active_model.json"
-DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_7station_2025_v1_utc_to_asia_shanghai_v1.csv"
+DEFAULT_HISTORY_CACHE = PACKAGE_ROOT / "runtime" / "history_single_step_7station_2025_v1_utc_to_asia_shanghai_v1.csv"
 
 
 def _sha256(path: Path) -> str:
@@ -58,8 +52,10 @@ class StationAttentionComponent:
 
     def __init__(self, checkpoint_path: Path, device: torch.device) -> None:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-        if checkpoint.get("format_version") != "2025full_causal_v1":
-            raise ValueError("Expected the selected 2025 seven-station causal checkpoint")
+        if checkpoint.get("format_version") != "2025_single_step_causal_v1":
+            raise ValueError("Expected the retrained single-step seven-station checkpoint")
+        if checkpoint.get("baseline_policy") != "last_observed_total_power":
+            raise ValueError("Single-step checkpoint must use the last observed power baseline")
         if checkpoint.get("power_missing_policy") != "zero" or checkpoint.get("state_policy") != "causal_hold_4":
             raise ValueError("Checkpoint preprocessing policy does not match production")
 
@@ -159,8 +155,8 @@ class StationAttentionComponent:
             future_frame[column] = profiles[:, index]
         return future_frame
 
-class TrendDetailBackend:
-    """Load and execute NHITS + PatchTST + StationAttention + TrendDetail."""
+class SingleStepBackend:
+    """Each retrained component consumes 288 observations and predicts one value."""
 
     def __init__(self, model_dir: Path, manifest: dict[str, Any], device: str) -> None:
         self.model_dir = model_dir
@@ -169,13 +165,8 @@ class TrendDetailBackend:
         self.input_size = int(manifest["history_points"])
         self.horizon = int(manifest["forecast_points"])
         self.test_metrics = dict(manifest["test_metrics"])
-        self.per_horizon_mape = np.asarray(
-            manifest["per_horizon_mape"], dtype=float
-        )
-        if self.input_size != 672 or self.horizon != 96:
-            raise ValueError("TrendDetail must use 672 history points and output 96 points")
-        if self.per_horizon_mape.shape != (self.horizon,):
-            raise ValueError("TrendDetail per-horizon MAPE has an invalid shape")
+        if self.input_size != 288 or self.horizon != 1:
+            raise ValueError("Single-step models must use 288 history points and output one point")
 
         self._verify_artifacts()
         low = manifest["low_frequency"]
@@ -186,11 +177,26 @@ class TrendDetailBackend:
         self.patchtst = NeuralForecastComponent(
             model_dir / str(low["patchtst_dir"]), "PatchTST", device
         )
+        if self.low_input_points != self.input_size:
+            raise ValueError("All components must use exactly three days of history")
+        for component in (self.nhits, self.patchtst):
+            if len(component.model.models) != 1:
+                raise ValueError("Expected one fitted model per neural component")
+            fitted = component.model.models[0]
+            if fitted.h != 1 or fitted.input_size != 288:
+                raise ValueError("Neural component is not trained for 288 -> 1")
         torch_device = torch.device(device)
         station = manifest["station_attention"]
         self.station = StationAttentionComponent(
             model_dir / str(station["checkpoint"]), torch_device
         )
+        if self.station.input_size != 288 or self.station.horizon != 1:
+            raise ValueError("StationAttention is not trained for 288 -> 1")
+        fusion = manifest["fusion"]
+        if fusion.get("method") != "single_step_convex_blend":
+            raise ValueError("Single-step model requires scalar fusion")
+        if any(not 0 <= float(fusion[key]) <= 1 for key in ("nhits_weight", "station_weight")):
+            raise ValueError("Invalid single-step fusion weights")
         if set(self.station.state_centers) != {f"{name}_total_power" for name in STATION_FEATURES}:
             raise ValueError("StationAttention checkpoint station list does not match the input adapter")
         for station in manifest["input_data"]["stations"]:
@@ -202,41 +208,15 @@ class TrendDetailBackend:
         nhits_prediction = self.nhits.predict(prepared, self.low_input_points)
         patchtst_prediction = self.patchtst.predict(prepared, self.low_input_points)
 
-        low_config = self.manifest["low_frequency"]["fusion"]
-        low_prediction = level_shape_fusion(
-            nhits_prediction,
-            patchtst_prediction,
-            float(low_config["alpha"]),
-            float(low_config["beta"]),
-        )
-
-        raw_station, baseline = self.station.predict_raw(prepared, last_timestamp)
-        station_config = self.manifest["station_attention"]
-        station_mae = apply_calibration(
-            raw_station, baseline, station_config["mae_calibration"]
-        )
-        station_hf = apply_calibration(
-            raw_station, baseline, station_config["hf_calibration"]
-        )
-
-        second_stage = self.manifest["second_stage"]
-        mae_branch = blend(
-            low_prediction,
-            station_mae,
-            float(second_stage["mae_branch"]["alpha"]),
-        )
-        hf_branch_config = second_stage["hf_branch"]
-        hf_branch = level_shape_fusion(
-            low_prediction,
-            station_hf,
-            float(hf_branch_config["alpha"]),
-            float(hf_branch_config["beta"]),
-        )
-        prediction = trend_detail_fusion(
-            mae_branch,
-            hf_branch,
-            self.manifest["trend_detail"],
-        )
+        raw_station, _ = self.station.predict_raw(prepared, last_timestamp)
+        for component in (nhits_prediction, patchtst_prediction, raw_station):
+            if component.shape != (1, 1):
+                raise ValueError("Each component must actually predict one value")
+        config = self.manifest["fusion"]
+        alpha = float(config["nhits_weight"])
+        station_weight = float(config["station_weight"])
+        low_prediction = alpha * nhits_prediction + (1.0 - alpha) * patchtst_prediction
+        prediction = (1.0 - station_weight) * low_prediction + station_weight * raw_station
         if not np.isfinite(prediction).all():
             raise ValueError("Model returned non-finite predictions")
         return prediction.reshape(-1)
@@ -246,25 +226,25 @@ class TrendDetailBackend:
         for relative_path, expected_hash in expected.items():
             path = self.model_dir / relative_path
             if not path.is_file():
-                raise FileNotFoundError(f"TrendDetail artifact is missing: {path}")
+                raise FileNotFoundError(f"Single-step artifact is missing: {path}")
             actual_hash = _sha256(path)
             if actual_hash.lower() != str(expected_hash).lower():
-                raise ValueError(f"TrendDetail artifact hash mismatch: {path}")
+                raise ValueError(f"Single-step artifact hash mismatch: {path}")
 
 
-def _load_backend(model_path: Path, device: str) -> TrendDetailBackend:
+def _load_backend(model_path: Path, device: str) -> SingleStepBackend:
     active_path = Path(model_path)
     if not active_path.is_file():
         raise FileNotFoundError(f"Active model config does not exist: {active_path}")
     active = json.loads(active_path.read_text(encoding="utf-8"))
-    if active.get("model_type") != "trend_detail":
+    if active.get("model_type") != "single_step_fusion":
         raise ValueError(f"Unsupported active model type: {active.get('model_type')}")
     model_dir = (active_path.parent / str(active["model_dir"])).resolve()
     manifest_path = model_dir / str(active.get("manifest", "manifest.json"))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("model_type") != active["model_type"]:
         raise ValueError("Active model type does not match its manifest")
-    return TrendDetailBackend(model_dir, manifest, device)
+    return SingleStepBackend(model_dir, manifest, device)
 
 
 class PowerPredictor:

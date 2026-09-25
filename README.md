@@ -1,10 +1,12 @@
 # 京能七站总功率预测服务
 
-接收七站真实功率、温度和湿度，返回未来24小时的 **96点总功率预测**，间隔15分钟，单位MW。当前模型为 `trend_detail_7station_2025_v1`，包含NHITS、PatchTST和StationAttentionHF的TrendDetail融合；无需重新训练。
+接收七站真实功率、温度和湿度，返回下一个15分钟时刻的 **1点总功率预测**，历史输入长度为3天（288点），单位MW。当前模型为 `single_step_7station_2025_v1`，NHITS、PatchTST和StationAttentionHF均已重新训练为288点输入、1点输出，采用验证集选择的单点加权融合。部署时直接加载新权重。
+
+`models/versions/` 仅保留这一套单点模型，权重与清单合计约6.92 MiB。旧96点权重已移出生产部署包，旧曲线融合代码已移除；NHITS、PatchTST的通用加载代码位于 `app/models/neural_forecast.py`。
 
 本版仅提供平台JSON接口：`POST /api/v1/fluxcast/compute`，输入 `point_table + frames`，输出 `result_point`。`varname` 为 `totalPowerForecast`，`event_key` 沿用 `JNH.Fluxcast.Compute`。历史/天气未就绪返回HTTP 200和空结果，附原因。
 
-**时间规则：历史训练数据已确认为北京时间（`Asia/Shanghai`）。接口输入、输出均为UTC；模型内部转换为北京时间，保持与训练特征一致。输出保留本次请求的时间格式，96帧须使用一致格式。模型权重不变；目标服务器仍需联调验收，使用与当前源码提交对应的镜像。**
+**时间规则：历史训练数据已确认为北京时间（`Asia/Shanghai`）。接口输入、输出均为UTC；模型内部转换为北京时间，保持与训练特征一致。输出保留本次请求的时间格式，96帧须使用一致格式。部署时使用本版重新训练的单点权重；目标服务器仍需联调验收，使用与当前源码提交对应的镜像。**
 
 ## 交接文档
 
@@ -37,7 +39,7 @@
 
 1. 平台提交七站同一时间范围的完整快照，每次96帧，每15分钟一帧；通常每15分钟滚动提交一次最近一天。
 2. `point_table` 列全19个功率、8个温度、8个湿度编码，`frames` 内直接使用测点编码作为key。缺测推荐写 `null`，也兼容省略该帧测点。
-3. 新服务先从早到晚补历史，或持续累计。672个连续且天气可构造的点满足后才预测；不足返回200和空结果，不清空缓存。
+3. 新服务先从早到晚补历史，或持续累计。288个连续且天气可构造的点满足后才预测；不足返回200和空结果，不清空缓存。
 4. 从 `result_point[].timestamp` 和 `value` 读取未来七站总功率。`reason` 和 `message` 解释空结果。HTTP 200不等于已有预测。
 
 功率缺失补0，实测0和有限负值保留；天气仅沿用该测点过去真实值。平台不传未来天气，不提供模型内部特征，也不需要把训练CSV上传生产服务器。
@@ -64,6 +66,8 @@ python tests/run_platform_verification.py --output-dir tests/results/platform_ad
 
 最后一条会自行启动和关闭本机测试服务，使用独立缓存，验证平台接口、旧路由已移除、异常输入、重启恢复、旧时间规则结果隔离，以及北京时间2025-10-20至12-31共73天/7008点的滚动预测与MAPE。请求先换算为UTC，评分再与原始时间对齐。输出目录必须不存在，复测换新目录。结果见 `verification.json`，不会连接生产服务或修改模型。
 
+2026-09-25重新执行本地检查，全部通过：44项单元及预处理测试、7008点真实HTTP回放、预测与重启恢复，以及只补3天真实数据即可出1点预测的空缓存检查。HTTP回放MAPE为3.1991%。本次仅验证本机Python服务和Compose配置语法，尚未构建或验证Docker镜像、容器。记录与未完成的容器/服务器验收见 [平台适配验证记录](docs/平台适配验证记录.md)。
+
 已有独立测试服务时也可执行：
 
 ```bash
@@ -77,10 +81,10 @@ python tests/run_rolling_accuracy_test.py --base-url http://127.0.0.1:18000 --ou
 在同架构构建机安装Docker Engine和Compose 2.20+，在源码根目录执行：
 
 ```bash
-docker build -t jingneng-power-forecast:7station-platform-v1 .
+docker build -t jingneng-power-forecast:7station-single-step-v1 .
 ```
 
-首次复制 `.env.example` 为 `.env`，填写 `POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-platform-v1`，已有配置不要覆盖。首次联调使用新的专用runtime目录，不复制旧接口缓存。
+首次复制 `.env.example` 为 `.env`，填写 `POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-single-step-v1`，已有配置不要覆盖。首次联调使用新的专用runtime目录，不复制旧接口缓存。
 
 ```bash
 docker compose config --quiet
@@ -93,12 +97,12 @@ docker compose logs --tail 100 forecast
 
 ## 版本与下载
 
-当前源码仅保留平台接口及六个配套JSON样例，旧接口和旧样例已移除。旧版可在Git历史中查阅，下载当前版本的源码ZIP不会包含历史目录或两套代码。模型权重仍为同一套七站模型，输出不含固定历史参考 `accuracy`。
+本地2026-09-24改造版为 `single_step_7station_2025_v1`：三个子模型均使用过去288点，直接预测下一点。原96点曲线的平滑、去均值和高频融合不适用于单点，现由验证集选择标量融合系数。模型及预处理在部署时固定，不在线训练。
 
-从GitHub默认分支 `main` 下载或克隆当前源码；交付时记录提交号。只复制该提交内的受版本管理文件，不把本地 `runtime/`、`tests/results/`、`tests/fixtures/` 或开发环境一起上传。
+2025年测试区间为10月20日至12月31日，共7008次单步预测。离线MAPE为3.1991%，MAE为78.3069 MW，RMSE为113.2851 MW；上一时刻功率基线MAPE为3.2543%。验证集仅用于选模型检查点和融合系数，测试集不参与选择。旧的一天96点误差与当前单点误差不直接比较。
 
-[GitHub历史发布 v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1) 包含旧接口源码及AMD64/ARM64镜像，当时测试MAPE约10.8778%。它们不包含本次平台适配，不能当作新版镜像使用。下载私有仓库附件需要有权限的账号。
+该单点版本使用新的源码提交和镜像标签；交付状态以对应提交的构建测试结果及Release附件为准。此前源码提交 `11f034b` 及其已发布AMD64/ARM64镜像属于96点版本，不能用于本次单点部署。
 
-新版构建通过后，镜像ZIP、ZIP校验文件及测试报告直接保存至 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases)，标签为 `v7station-platform-提交号前12位`，不再依赖Actions产物存储。确认版本后，镜像可另行发布至 [公开下载仓库](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases)，也可将完整ZIP及校验文件直接发给部署人员。公开下载仓库的自动生成 `Source code` 附件只有下载说明，不是算法源码或镜像。
+构建和测试通过后，工作流向 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases) 发布 `v7station-single-step-提交号前12位` 交付包；镜像和校验文件可再同步至 [公开下载仓库](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases)。下载仓库的自动生成 Source code 附件只是下载仓库自身文件，算法源码从源码仓库获取。
 
-交付时核对源码、镜像、`release.json` 和 `SHA256SUMS` 对应关系，按服务器架构选择一个镜像ZIP。正式上线前仍须完成目标服务器平台联调。
+源码、镜像、模型清单、release.json和SHA256SUMS须配套。生产部署包及Docker构建上下文均只保留当前单点模型。升级使用新的独立runtime目录，以UTC补传至少288个连续可用历史点；天气尚未有过真实观测时，还须补充更早的真实天气历史。目标服务器仍需平台联调。

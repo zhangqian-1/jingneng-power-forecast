@@ -1,6 +1,6 @@
 """Build real-data API fixtures from the seven selected station CSV files.
 
-The generated JSON files contain only the selected seven-day test window,
+The generated JSON files contain only the selected three-day test window,
 not the original CSV files. They are intended for the private GitHub Actions
 integration test and mirror the production contract: one request per day.
 """
@@ -60,11 +60,13 @@ def latest_common_timestamp(frames: dict[str, pd.DataFrame]) -> pd.Timestamp:
         latest.append(frame.index[valid_rows].max())
     end = min(latest).floor("15min")
     if end - pd.Timedelta(days=7) < min(frame.index.min() for frame in frames.values()):
-        raise ValueError("not enough overlapping history for a seven-day fixture")
+        raise ValueError("not enough overlapping history for the weather-seeded fixture")
     return end
 
 
 def make_payloads(frames: dict[str, pd.DataFrame], output_dir: Path, end: pd.Timestamp) -> None:
+    # Keep earlier real observations to initialize weather that is absent on later days.
+    # The model itself still requires exactly 288 input points.
     timeline = pd.date_range(end=end, periods=7 * 96, freq="15min")
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -123,7 +125,7 @@ def main() -> None:
     if end.tzinfo is not None:
         raise ValueError("end-time must use the source CSV's naive Asia/Shanghai clock")
     make_payloads(frames, args.output_dir, end.floor("15min"))
-    print(f"Generated seven UTC requests; source end={end} {MODEL_TIMEZONE}; API end={model_clock_to_utc(end)} UTC")
+    print(f"Generated seven UTC weather-seeded requests; model history=288; source end={end} {MODEL_TIMEZONE}; API end={model_clock_to_utc(end)} UTC")
 
 
 if __name__ == "__main__":

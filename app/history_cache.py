@@ -22,7 +22,7 @@ class HistoryNotReadyError(ValueError):
 class RealHistoryCache:
     """Merge overlapping one-day requests and retain recent real history."""
 
-    def __init__(self, cache_path: Path, required_points: int = 672, retention_points: int = 768,
+    def __init__(self, cache_path: Path, required_points: int = 288, retention_points: int = 768,
                  state_centers: dict | None = None, model_name: str = "seven_station_2025"):
         self.cache_path = Path(cache_path)
         self.required_points = required_points

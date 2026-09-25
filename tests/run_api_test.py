@@ -1,4 +1,4 @@
-"""Exercise the production container with seven sequential daily requests."""
+"""Exercise one-step forecasts using seven real daily batches to seed missing weather."""
 from __future__ import annotations
 
 import argparse
@@ -34,7 +34,7 @@ def wait_until_ready(base_url: str) -> None:
         try:
             status, result = request_json(f"{base_url}{PLATFORM_PATH}/latest")
             if result.get("event_key") == "JNH.Fluxcast.Compute" and (
-                    (status == 200 and len(result.get("result_point", [])) == 96)
+                    (status == 200 and len(result.get("result_point", [])) == 1)
                     or (status == 404 and result.get("reason") == "no_forecast")):
                 return
         except (URLError, TimeoutError, OSError):
@@ -55,7 +55,7 @@ def main() -> None:
     wait_until_ready(args.base_url)
     files = sorted(args.fixture_dir.glob("day_*.json"))
     if len(files) != 7:
-        raise RuntimeError(f"expected 7 daily fixtures, found {len(files)}")
+        raise RuntimeError(f"expected 7 weather-seeding fixtures, found {len(files)}")
     last_payload = json.loads(files[-1].read_text(encoding="utf-8"))
     endpoint = PLATFORM_PATH
 
@@ -82,10 +82,12 @@ def main() -> None:
         expected = 200
         if status != expected:
             raise AssertionError(f"{path.name}: expected HTTP {expected}, got {status}: {result}")
-        if index == len(files):
+        if index == len(files) or result.get("result_point"):
             validate_platform_prediction(result, payload)
         else:
             validate_not_ready(result)
+        if index < 3 and result.get("result_point"):
+            raise AssertionError("A fresh cache cannot predict before 288 history points")
         print(f"{path.name}: HTTP {status}")
 
     status, latest = request_json(f"{args.base_url}{endpoint}/latest")
@@ -95,7 +97,7 @@ def main() -> None:
     if args.save_response:
         args.save_response.parent.mkdir(parents=True, exist_ok=True)
         args.save_response.write_text(json.dumps(latest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("Real-data API test passed: latest endpoint returned 96 predictions.")
+    print("Real-data API test passed: latest endpoint returned one prediction.")
 
 
 if __name__ == "__main__":

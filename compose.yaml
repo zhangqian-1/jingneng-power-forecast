@@ -27,7 +27,7 @@ services:
           try:
               with urlopen('http://127.0.0.1:8000/api/v1/fluxcast/compute/latest', timeout=5) as response:
                   payload = json.load(response)
-              sys.exit(0 if payload.get('event_key') == 'JNH.Fluxcast.Compute' and len(payload.get('result_point', [])) == 96 else 1)
+              sys.exit(0 if payload.get('event_key') == 'JNH.Fluxcast.Compute' and len(payload.get('result_point', [])) == 1 else 1)
           except HTTPError as error:
               payload = json.load(error)
               sys.exit(0 if error.code == 404 and payload.get('event_key') == 'JNH.Fluxcast.Compute'

@@ -43,7 +43,8 @@ examples/
 
 # Runtime history and retired weights are not shipped with the active model.
 runtime/
-models/versions/trend_detail_v2/
+models/versions/*
+!models/versions/single_step_7station_2025_v1/
 
 # Deployment configuration stays on the host, not in the build context.
 compose.yaml

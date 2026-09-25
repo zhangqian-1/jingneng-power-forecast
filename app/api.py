@@ -16,7 +16,7 @@ from time_policy import MODEL_TIMEZONE, TIME_POLICY_ID, TIMEZONE_BASIS
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_LATEST_JSON = PACKAGE_ROOT / "runtime" / "latest_forecast_utc_to_asia_shanghai_v1.json"
+DEFAULT_LATEST_JSON = PACKAGE_ROOT / "runtime" / "latest_single_step_forecast_utc_to_asia_shanghai_v1.json"
 MAX_REQUEST_BYTES = 50 * 1024 * 1024
 LOGGER = logging.getLogger(__name__)
 
