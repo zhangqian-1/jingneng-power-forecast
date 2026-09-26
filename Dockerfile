@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY app/ ./app/
 COPY models/active_model.json ./models/active_model.json
-COPY models/versions/single_step_7station_2025_v1/ ./models/versions/single_step_7station_2025_v1/
+COPY models/versions/trend_detail_7station_2025_v1/ ./models/versions/trend_detail_7station_2025_v1/
 
 # 只保存由真实接口请求生成的最近一次结果
 RUN mkdir -p /app/runtime

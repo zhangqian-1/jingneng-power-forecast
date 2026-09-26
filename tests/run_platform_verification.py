@@ -3,13 +3,11 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
 import socket
-import shutil
 import subprocess
 import sys
 
@@ -63,64 +61,10 @@ def with_timestamp_format(payload: dict, separator: str, suffix: str) -> dict:
                                  for row in payload["frames"]])
 
 
-def score_test_set(output: Path, workers: int) -> None:
-    """Independent HTTP services keep each chronological replay and cache isolated."""
-    if workers == 1:
-        with server(output / "rolling") as url:
-            run("tests/run_rolling_accuracy_test.py", "--base-url", url, "--output-dir", output / "rolling_accuracy")
-        return
-    from run_rolling_accuracy_test import write_outputs
-    workers = min(workers, 73)
-    sizes = [73 // workers + (index < 73 % workers) for index in range(workers)]
-    tasks = []
-    offset = 0
-    for index, days in enumerate(sizes):
-        tasks.append((index, pd.Timestamp("2025-10-20") + pd.Timedelta(days=offset), days))
-        offset += days
-
-    def part(task):
-        index, start, days = task
-        directory = output / "rolling_shards" / f"part_{index:02d}"
-        directory.mkdir(parents=True)
-        with server(directory / "service") as url, (directory / "replay.log").open("w", encoding="utf-8") as log:
-            # All shards seed from the same real history. Some weather points have
-            # gaps longer than 14 days, so a later independent cold start is invalid.
-            warmup_days = (start - pd.Timestamp("2025-10-06")).days
-            subprocess.run([sys.executable, "-u", "tests/run_rolling_accuracy_test.py",
-                "--base-url", url, "--target-start", str(start), "--target-windows", str(days),
-                "--warmup-days", str(warmup_days),
-                "--output-dir", str(directory / "results")], cwd=ROOT, check=True, stdout=log, stderr=subprocess.STDOUT)
-        print(f"HTTP replay part {index + 1}/{workers} completed: {days * 96} targets", flush=True)
-        return directory / "results"
-
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        directories = list(pool.map(part, tasks))
-    result = pd.concat([pd.read_csv(path / "rolling_predictions.csv", parse_dates=["ts"])
-                        for path in directories], ignore_index=True).sort_values("ts")
-    expected = pd.date_range("2025-10-20", periods=7008, freq="15min")
-    if not pd.DatetimeIndex(result.ts).equals(expected):
-        raise AssertionError("Sharded HTTP replay has missing or duplicate target times")
-    statuses = {}
-    for directory in directories:
-        summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
-        for key, count in summary["http_status_counts"].items():
-            statuses[key] = statuses.get(key, 0) + count
-    aggregate = output / "rolling_accuracy"
-    warmup_requests = sum((start - pd.Timestamp("2025-10-06")).days for _, start, _ in tasks)
-    write_outputs(result, aggregate, {"warmup_days": warmup_requests, "target_windows": 73,
-        "target_start": str(expected[0]), "target_end": str(expected[-1]),
-        "raw_dir": ROOT / "tests/real_data_raw", "api_url": "isolated_local_http_services",
-        "http_status_counts": statuses})
-    shutil.copytree(directories[0] / "samples", aggregate / "samples")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--rolling-workers", type=int, default=1, help="Independent local HTTP replay services")
     args = parser.parse_args()
-    if args.rolling_workers < 1:
-        parser.error("rolling-workers must be positive")
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
@@ -171,7 +115,7 @@ def main() -> None:
         assert status == 200
         validate_not_ready(response)
         assert request_json(url + PLATFORM_PATH + "/latest")[1] == last_result
-    # Restart checks use the saved weather-seeded cache before introducing a gap.
+    # Restart checks use the saved seven-day cache before introducing a gap.
     # Repeat on a fresh directory so the preceding negative check stays isolated.
     restart = output / "restart"
     iso_fixtures = output / "fixtures_iso8601"
@@ -204,7 +148,8 @@ def main() -> None:
         assert point in response["missing_weather_points"]
         write_json(output / "samples/input_weather_not_ready.json", weather_payload)
         write_json(output / "samples/output_weather_not_ready.json", response)
-    score_test_set(output, args.rolling_workers)
+    with server(output / "rolling") as url:
+        run("tests/run_rolling_accuracy_test.py", "--base-url", url, "--output-dir", output / "rolling_accuracy")
     summary = json.loads((output / "rolling_accuracy/summary.json").read_text(encoding="utf-8"))
     active = json.loads((ROOT / "models/active_model.json").read_text(encoding="utf-8"))
     manifest = json.loads((ROOT / "models" / active["model_dir"] / active["manifest"]).read_text(encoding="utf-8"))

@@ -1,7 +1,7 @@
 """Run the production API over the complete offline test window.
 
-The script submits the latest 96 historical points every 15 minutes after
-daily warmup batches. It scores a response only after the corresponding target time
+The script submits one 96-point request per day, exactly as the production
+caller does.  It scores a response only after the corresponding target time
 has been reached in the historical files, so the reported metrics are actual
 rolling API metrics rather than the response's historical accuracy estimate.
 """
@@ -215,9 +215,7 @@ def write_outputs(
             "points_per_request": POINTS_PER_DAY,
             "interval_minutes": 15,
             "warmup_requests": config["warmup_days"],
-            "successful_prediction_windows": config["target_windows"] * POINTS_PER_DAY,
-            "forecast_points_per_response": 1,
-            "request_step_minutes": 15,
+            "successful_prediction_windows": config["target_windows"],
         },
         "target_start": config["target_start"],
         "target_end": config["target_end"],
@@ -248,7 +246,7 @@ def main() -> int:
     parser.add_argument("--raw-dir", type=Path, default=PACKAGE_ROOT / "tests" / "real_data_raw")
     parser.add_argument("--target-start", default="2025-10-20 00:00:00",
                         help="First target in source CSV Asia/Shanghai time; API traffic uses UTC")
-    parser.add_argument("--target-windows", type=int, default=73, help="Number of target days, each with 96 separate one-step forecasts")
+    parser.add_argument("--target-windows", type=int, default=73)
     parser.add_argument("--warmup-days", type=int, default=14)
     parser.add_argument(
         "--output-dir",
@@ -278,21 +276,17 @@ def main() -> int:
     actual_lookup = actual_total.to_dict()
 
     api_url = args.base_url.rstrip("/") + PLATFORM_PATH
-    total_requests = args.warmup_days + args.target_windows * POINTS_PER_DAY - 1
+    total_requests = args.warmup_days + args.target_windows - 1
     status_counts: dict[str, int] = {}
     scored_rows: list[dict[str, Any]] = []
     print(
         f"Rolling API test: {total_requests} requests, "
-        f"{args.warmup_days} daily warmup batches; {args.target_windows * POINTS_PER_DAY} one-step targets"
+        f"{args.warmup_days} warmup + {args.target_windows} prediction windows"
     )
     print(f"Target range ({MODEL_TIMEZONE}): {target_start} -> {target_end}; API traffic: UTC")
 
     for request_index in range(total_requests):
-        if request_index < args.warmup_days:
-            request_start = first_request_start + request_index * DAY
-        else:
-            request_start = (target_start - DAY
-                             + (request_index - args.warmup_days + 1) * INTERVAL)
+        request_start = first_request_start + request_index * DAY
         request_end = request_start + (POINTS_PER_DAY - 1) * INTERVAL
         expected_target_start = request_end + INTERVAL
         payload = make_payload(frames, request_start)
@@ -319,12 +313,11 @@ def main() -> int:
                     json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8"
                 )
 
-        if request_index < args.warmup_days or request_index % 96 == 0 or request_index == total_requests - 1:
-            print(
-                f"[{request_index + 1:02d}/{total_requests}] HTTP {status} "
-                f"{request_start:%Y-%m-%d %H:%M} -> {expected_target_start:%Y-%m-%d %H:%M} "
-                f"({elapsed:.2f}s)", flush=True
-            )
+        print(
+            f"[{request_index + 1:02d}/{total_requests}] HTTP {status} "
+            f"{request_start:%Y-%m-%d %H:%M} -> {expected_target_start:%Y-%m-%d %H:%M} "
+            f"({elapsed:.2f}s)"
+        )
 
         if not response.get("result_point"):
             validate_not_ready(response)

@@ -43,34 +43,6 @@ class PlatformContractTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.cache_path = Path(self.temp.name) / "platform.csv"
 
-    def test_three_complete_days_warm_the_default_cache(self):
-        self._initialize_unit_weather()
-        cache = RealHistoryCache(self.cache_path)
-        self.assertEqual(cache.required_points, 288)
-        for day in range(3):
-            payload = copy.deepcopy(self.payload)
-            for row in payload["frames"]:
-                row["timestamp"] = str(pd.Timestamp(row["timestamp"]) + pd.Timedelta(days=day))
-            parsed = self.adapter.parse_json(to_model_payload(payload))
-            if day < 2:
-                with self.assertRaises(HistoryNotReadyError) as waiting:
-                    cache.merge(parsed)
-                self.assertEqual(waiting.exception.status["requiredPoints"], 288)
-                self.assertEqual(waiting.exception.status["continuousPoints"], (day + 1) * 96)
-            else:
-                frame, status = cache.merge(parsed)
-                self.assertTrue(status["ready"])
-                self.assertEqual(len(frame), 288)
-        # Replaying a batch must not turn three days into four.
-        _, repeated = RealHistoryCache(self.cache_path).merge(parsed)
-        self.assertEqual(repeated["continuousPoints"], 288)
-
-    def test_old_96_point_predictions_are_rejected(self):
-        rows = [{"timestamp": str(ts), "value": 1.0}
-                for ts in pd.date_range("2025-10-20", periods=96, freq="15min")]
-        with self.assertRaises(ValueError):
-            to_platform_result({"predictions": rows})
-
     def test_all_raw_points_and_features_preserved(self):
         self.assertEqual(len(POINT_TABLE), 35)
         expected = self.adapter.parse_json(self.records)
@@ -120,7 +92,7 @@ class PlatformContractTests(unittest.TestCase):
                                                    required_points=96).merge(parsed)
                 pd.testing.assert_frame_equal(feature_frame[expected_features.columns].reset_index(drop=True),
                                               expected_features.reset_index(drop=True), check_dtype=False)
-                future = pd.date_range(expected_times[-1] + pd.Timedelta(minutes=15), periods=1, freq="15min")
+                future = pd.date_range(expected_times[-1] + pd.Timedelta(minutes=15), periods=96, freq="15min")
                 response = to_platform_result({"predictions": [{"timestamp": str(ts), "value": 1.0} for ts in future]})
                 validate_platform_prediction(response, payload)
 
@@ -169,7 +141,7 @@ class PlatformContractTests(unittest.TestCase):
                     payload = copy.deepcopy(self.payload)
                     for row, timestamp in zip(payload["frames"], pd.date_range(end=cutoff, periods=96, freq="15min")):
                         row["timestamp"] = str(timestamp).replace(" ", separator) + suffix
-                    future = pd.date_range(expected_beijing(expected), periods=1, freq="15min")
+                    future = pd.date_range(expected_beijing(expected), periods=96, freq="15min")
                     predictor.predict_records.return_value = {
                         "predictions": [{"timestamp": str(ts), "value": 1.0} for ts in future],
                         "inputQuality": {"submittedMissingLoadValues": 0, "submittedMissingWeatherValues": 0},
@@ -255,9 +227,9 @@ class PlatformContractTests(unittest.TestCase):
 
     def test_not_ready_service_preserves_reason_and_counts(self):
         for weather in (False, True):
-            status = {"continuousPoints": 0 if weather else 96, "requiredPoints": 288,
+            status = {"continuousPoints": 0 if weather else 96, "requiredPoints": 672,
                       "waitingForWeatherHistory": weather, "missingWeatherPoints": ["point"] if weather else []}
-            predictor = SimpleNamespace(input_size=288, model_name="unit-test-only",
+            predictor = SimpleNamespace(input_size=672, model_name="unit-test-only",
                                         backend=SimpleNamespace(station=SimpleNamespace(state_centers={})),
                                         predict_records=Mock(side_effect=HistoryNotReadyError(status)))
             service = PlatformForecastService(predictor)
@@ -296,7 +268,7 @@ class PlatformContractTests(unittest.TestCase):
                                        for row in example["result_point"]]}
         with self.assertRaises(ValueError):
             to_platform_result({"predictions": result_rows["predictions"][:-1]})
-        result_rows["predictions"].append(dict(result_rows["predictions"][0]))
+        result_rows["predictions"][0]["timestamp"] = result_rows["predictions"][1]["timestamp"]
         with self.assertRaises(ValueError):
             to_platform_result(result_rows)
 

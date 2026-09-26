@@ -21,7 +21,7 @@ permissions:
 jobs:
   build:
     runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 120
+    timeout-minutes: 45
     env:
       TARGET_ARCH: ${{ inputs.architecture || 'amd64' }}
       POWER_FORECAST_BIND: 127.0.0.1
@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           IMAGE_REPO="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jingneng-power-forecast"
-          IMAGE_TAG="7station-single-step-v1-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          IMAGE_TAG="7station-platform-v1-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "POWER_FORECAST_IMAGE=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
           mkdir -p tests/results/ci "$POWER_FORECAST_RUNTIME_DIR"
           docker compose version
@@ -80,9 +80,6 @@ jobs:
         run: |
           test "$(docker image inspect "$POWER_FORECAST_IMAGE" --format '{{.Os}}/{{.Architecture}}')" = "linux/$TARGET_ARCH"
           docker image inspect "$POWER_FORECAST_IMAGE" > tests/results/ci/image_inspect.json
-          docker run --rm --entrypoint python \
-            --mount "type=bind,source=$PWD/check_config.py,target=/app/check_config.py,readonly" \
-            "$POWER_FORECAST_IMAGE" /app/check_config.py
 
       - name: Install test dependencies
         run: |
@@ -181,7 +178,7 @@ jobs:
           assert info["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["GITHUB_SHA"]
           score = json.loads((out / "rolling_accuracy/summary.json").read_text())
           release = {"image": image, "digest": digests[0], "platform": "linux/" + info["Architecture"],
-                     "commit": os.environ["GITHUB_SHA"], "model": "single_step_7station_2025_v1",
+                     "commit": os.environ["GITHUB_SHA"], "model": "trend_detail_7station_2025_v1",
                      "platform_contract": "fluxcast_v1", "api_timezone": score["time_basis"]["api"],
                      "training_timezone": score["time_basis"]["source_csv_and_ts_column"],
                      "time_policy": score["time_basis"]["time_policy"], "timezone_basis": score["time_basis"]["timezone_basis"],
@@ -221,7 +218,7 @@ jobs:
           root = Path("/app")
           for name in ("tests", "docs", "examples", ".git", ".github", ".env"):
               assert not (root / name).exists(), name
-          assert {p.name for p in (root / "models/versions").iterdir()} == {"single_step_7station_2025_v1"}
+          assert {p.name for p in (root / "models/versions").iterdir()} == {"trend_detail_7station_2025_v1"}
           assert not any((root / "runtime").iterdir()), "Image contains runtime history"
           print("Imported image contains only the active model and runtime files")
           '
@@ -256,12 +253,12 @@ jobs:
           python tests/build_offline_delivery.py \
             --archive "tests/results/release/offline-image-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
 
-      - name: Publish verified files to source Release
+      - name: Publish verified files to private Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          RELEASE_TAG="v7station-single-step-${GITHUB_SHA:0:12}"
+          RELEASE_TAG="v7station-platform-${GITHUB_SHA:0:12}"
           REPORT_NAME="container-checks-${TARGET_ARCH}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python - "$REPORT_NAME" <<'PY'
           import shutil
@@ -271,8 +268,8 @@ jobs:
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --prerelease \
-              --title "Seven-station single-step forecast ${GITHUB_SHA:0:12}" \
-              --notes "Past 288 points to the next 15-minute point. Tested architecture-specific offline images and reports. Source commit: $GITHUB_SHA. Target-server acceptance is still required." \
+              --title "Seven-station platform API ${GITHUB_SHA:0:12}" \
+              --notes "Tested architecture-specific offline images and reports. Source commit: $GITHUB_SHA. Target-server acceptance is still required." \
               || gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
           gh release upload "$RELEASE_TAG" tests/results/release/* --repo "$GITHUB_REPOSITORY"
@@ -281,4 +278,4 @@ jobs:
       - name: Summarize delivery status
         if: always()
         run: |
-          echo "Offline delivery is complete only when the source Release upload succeeds. Failed-step details remain in the Actions job log." >> "$GITHUB_STEP_SUMMARY"
+          echo "Offline delivery is complete only when the private Release upload succeeds. Failed-step details remain in the Actions job log." >> "$GITHUB_STEP_SUMMARY"

@@ -39,7 +39,7 @@ def build_delivery(root: Path, ci: Path, output: Path) -> dict:
     initial = json.loads((ci / "smoke_response.json").read_text(encoding="utf-8"))
     imported = json.loads((ci / "import_smoke_response.json").read_text(encoding="utf-8"))
     if (initial.get("event_key") != "JNH.Fluxcast.Compute"
-            or len(initial.get("result_point", [])) != 1
+            or len(initial.get("result_point", [])) != 96
             or imported != initial):
         raise ValueError("Imported predictions do not match the tested image")
     expected_id = (ci / "image_id_before_export.txt").read_text().strip()

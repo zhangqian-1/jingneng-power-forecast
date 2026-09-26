@@ -22,7 +22,7 @@ def main() -> int:
         APP_DIR / "history_cache.py",
         APP_DIR / "platform_adapter.py",
         APP_DIR / "time_policy.py",
-        APP_DIR / "models" / "neural_forecast.py",
+        APP_DIR / "models" / "trend_detail.py",
     ]
     for path in required_files:
         if not path.is_file():
@@ -54,12 +54,8 @@ def main() -> int:
         try:
             active_path = ROOT / "models" / "active_model.json"
             active = json.loads(active_path.read_text(encoding="utf-8"))
-            if active.get("model_type") != "single_step_fusion":
-                errors.append("活动模型不是单点融合类型")
-            versions = ROOT / "models" / "versions"
-            active_dir = (ROOT / "models" / active["model_dir"]).resolve()
-            if {path.resolve() for path in versions.iterdir()} != {active_dir}:
-                errors.append("models/versions 必须只保留当前活动模型，历史模型请移出生产部署包")
+            if active.get("model_type") != "trend_detail":
+                errors.append("活动模型不是完整 TrendDetail 类型")
 
             from predict import PowerPredictor
 
@@ -69,10 +65,10 @@ def main() -> int:
                     device="cpu",
                     history_cache_path=Path(temp_dir) / "check_only_cache.csv",
                 )
-                if predictor.input_size != 288 or predictor.horizon != 1:
-                    errors.append("活动模型必须使用288点输入并输出1点")
-                if "SingleStepFusion" not in predictor.model_name:
-                    errors.append("活动模型名称未声明单点融合链路")
+                if predictor.input_size != 672 or predictor.horizon != 96:
+                    errors.append("活动模型必须使用672点输入并输出96点")
+                if "TrendDetail" not in predictor.model_name:
+                    errors.append("活动模型名称未声明完整 TrendDetail 链路")
         except Exception as exc:
             errors.append(f"生产模型加载失败: {exc}")
 
@@ -94,11 +90,10 @@ def main() -> int:
         return 1
 
     print("[PASS] 生产部署检查通过")
-    print("- 活动模型是单点融合链路")
+    print("- 活动模型是完整 TrendDetail 链路")
     print("- NHITS、PatchTST、StationAttentionHF 均可加载")
     print("- 全部版本化模型文件哈希校验通过")
-    print("- 生产部署包只包含当前单点模型，无旧96点模型")
-    print("- 外部每次提交96点，缓存至少288点（最多保留768点上下文）后输出1点")
+    print("- 外部每次提交96点，缓存至少672点（最多保留768点上下文）后输出96点")
     print("- 未发现示例输入、静态预测或模拟数据生成逻辑")
     print("- 接口收发UTC，模型内部按Asia/Shanghai处理；本检查不代表目标服务器接入验收")
     return 0

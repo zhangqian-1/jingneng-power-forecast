@@ -21,7 +21,7 @@ class OfflineDeliveryTests(unittest.TestCase):
         (self.output / "image.tar.gz").write_bytes(b"archive-test-fixture")
         self.release = {
             "image": "example/forecast:test", "platform": "linux/arm64",
-            "model": "single_step_7station_2025_v1",
+            "model": "trend_detail_7station_2025_v1",
             "compose_smoke_test": "passed", "container_recreation_test": "passed",
         }
         (self.ci / "release.json").write_text(json.dumps(self.release))

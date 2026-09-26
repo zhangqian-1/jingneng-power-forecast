@@ -1,6 +1,6 @@
 {
-  "model_type": "single_step_fusion",
-  "version": "single_step_7station_2025_v1",
-  "model_dir": "versions/single_step_7station_2025_v1",
+  "model_type": "trend_detail",
+  "version": "trend_detail_7station_2025_v1",
+  "model_dir": "versions/trend_detail_7station_2025_v1",
   "manifest": "manifest.json"
 }

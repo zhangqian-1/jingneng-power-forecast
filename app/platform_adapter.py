@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 PLATFORM_PATH = "/api/v1/fluxcast/compute"
 EVENT_KEY = "JNH.Fluxcast.Compute"
 VARNAME = "totalPowerForecast"
-FORECAST_POINTS = 1
 POINT_TABLE = [
     point
     for station in STATION_FEATURES
@@ -104,8 +103,8 @@ def to_model_payload(payload: Any) -> dict[str, Any]:
 
 def to_platform_result(result: dict[str, Any], timestamp_format: str = TIMESTAMP_FORMAT) -> dict[str, Any]:
     rows = result["predictions"]
-    if len(rows) != FORECAST_POINTS:
-        raise ValueError("Expected exactly one model prediction")
+    if len(rows) != POINTS_PER_DAY:
+        raise ValueError("Expected 96 model predictions")
     points = []
     for row in rows:
         power = float(row["value"])
@@ -113,7 +112,7 @@ def to_platform_result(result: dict[str, Any], timestamp_format: str = TIMESTAMP
             raise ValueError("Model returned a non-finite prediction")
         timestamp = model_clock_to_utc(pd.to_datetime(row["timestamp"], format=TIMESTAMP_FORMAT))
         points.append({"varname": VARNAME, "timestamp": timestamp.strftime(timestamp_format), "value": power})
-    if len({point["timestamp"] for point in points}) != FORECAST_POINTS:
+    if len({point["timestamp"] for point in points}) != POINTS_PER_DAY:
         raise ValueError("Model returned duplicate prediction timestamps")
     return {"result_point": points, "event_key": EVENT_KEY}
 

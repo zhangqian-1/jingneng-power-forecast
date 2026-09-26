@@ -2,13 +2,11 @@
 
 ## 1. 项目说明与运行环境
 
-本项目提供七场站总功率预测服务，交付内容包括服务源码、已训练模型、Docker 构建与启动配置、接口说明及 JSON 样例。服务接收平台提供的真实历史测点数据，历史满足要求后返回下一个15分钟时刻、共1点的七场站总功率预测结果。
+本项目提供七场站总功率预测服务，交付内容包括服务源码、已训练模型、Docker 构建与启动配置、接口说明及 JSON 样例。服务接收平台提供的真实历史测点数据，历史满足要求后返回未来 24 小时、共 96 点的七场站总功率预测结果。
 
 生产运行不依赖测试集，不进行在线训练。本文面向部署及运维人员；测点、输入输出字段和调用样例见 [接口交接说明](接口交接说明.md) 与 [测点需求清单](测点需求清单.md)。
 
-生产包只保留 `single_step_7station_2025_v1` 模型目录，三个子模型均为288点输入、1点输出。旧模型已移出，构建时无需携带旧权重、训练数据或测试缓存。
-
-历史训练数据已确认为北京时间（`Asia/Shanghai`）。本版接口收发UTC，模型内部按北京时间处理，不依赖容器或宿主机时区；响应保留请求的时间格式。目标服务器仍需联调。单点镜像是否完成构建和测试，以对应提交的Release附件及 `release.json` 为准；此前提交 `11f034b` 对应的是96点版本，不能用于本次单点部署。
+历史训练数据已确认为北京时间（`Asia/Shanghai`）。本版接口收发UTC，模型内部按北京时间处理，不依赖容器或宿主机时区；响应保留请求的时间格式。目标服务器仍需联调。使用与当前源码提交对应的镜像，历史发布 `042dcd1` 的镜像不包含新接口。
 
 | 项目 | 要求 |
 |---|---|
@@ -35,7 +33,7 @@ cp -n .env.example .env
 Windows 可通过文件管理器复制，文件名为 `.env`。在 `.env` 中填写与第 3.1 节构建命令一致的镜像标签：
 
 ```dotenv
-POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-single-step-v1
+POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-platform-v1
 ```
 
 | 配置项 | 填写内容 |
@@ -54,7 +52,7 @@ POWER_FORECAST_IMAGE=jingneng-power-forecast:7station-single-step-v1
 在与目标服务器相同架构的机器上执行：
 
 ```bash
-docker build -t jingneng-power-forecast:7station-single-step-v1 .
+docker build -t jingneng-power-forecast:7station-platform-v1 .
 ```
 
 构建使用已训练模型，无需重新训练。构建机与部署服务器不同时，按附录 A 导出并传输镜像；跨架构构建需配置 Buildx 并单独验证。
@@ -84,14 +82,14 @@ Windows PowerShell 使用 `curl.exe`；地址及端口按部署配置调整。�
 
 平台通过 `POST /api/v1/fluxcast/compute` 提交 `point_table + frames` JSON，每次包含七站35个测点、最近一天的96个连续15分钟历史点，通常每15分钟滚动提交。服务不主动抓取平台数据；请求格式、测点及缺失处理以 [接口交接说明](接口交接说明.md) 为准。
 
-首次运行需按时间顺序补传真实历史，或持续累计，直至满足 **288个连续且温湿度可构造的历史点**。历史或天气未就绪返回HTTP 200和空 `result_point`，通过 `reason`、`message` 说明原因，本次数据仍缓存，应继续补传而非清空缓存。
+首次运行需按时间顺序补传真实历史，或持续累计，直至满足 **672个连续且温湿度可构造的历史点**。历史或天气未就绪返回HTTP 200和空 `result_point`，通过 `reason`、`message` 说明原因，本次数据仍缓存，应继续补传而非清空缓存。
 
 | 检查结果 | 含义 |
 |---|---|
 | 容器为 `healthy` | 服务可响应，不代表历史数据已经够用 |
 | 首次 GET `latest` 返回 `404` | 尚无成功预测，属于正常初始状态 |
 | POST 返回 `200`，`result_point` 为空 | 历史或天气未就绪，查看 `reason`、`continuous_points`、`missing_weather_points` |
-| POST 返回 `200`，`result_point` 为1点 | 预测成功；`value` 为七站总功率，单位MW |
+| POST 返回 `200`，`result_point` 为96点 | 预测成功；`value` 为七站总功率，单位MW |
 | 容器为 `unhealthy` 或接口返回其他错误 | 查看服务日志及接口文档中的错误说明 |
 
 预测从输入末点后15分钟开始。GET `latest`仅查询最近一次成功结果，不触发新预测；后续空结果不会覆盖它，应核对 `result_point[].timestamp` 确认结果时效。接口不输出历史参考 `accuracy`。本版仅保留平台接口及配套样例。
@@ -100,9 +98,7 @@ Windows PowerShell 使用 `curl.exe`；地址及端口按部署配置调整。�
 
 宿主机持久化目录挂载到容器 `/app/runtime`，保存最多 768 个时间点（8 天）、历史上下文和最近结果。重建容器时保留该目录；每个实例使用独立目录，不复用旧十站或其他不兼容模型的缓存。
 
-缓存保留上限不改变3天模型输入：模型每次只读取最近288点。运行缓存由真实平台请求生成，交付时不预装；删除本版运行缓存后需要重新补足真实历史。
-
-本版默认缓存为 `history_single_step_7station_2025_v1_utc_to_asia_shanghai_v1.csv`（模型北京时间），最近结果为 `latest_single_step_forecast_utc_to_asia_shanghai_v1.json`（响应UTC）。两者均标记时间规则版本；旧缓存改名仍会拒绝，旧最近结果不会返回。升级时使用新的专用runtime目录，按UTC重新补传至少288个连续可用历史点；之后重建容器保留这个目录。不修改宿主机时区，不将旧缓存平移后直接复用。
+本版默认缓存为 `history_7station_2025_v1_utc_to_asia_shanghai_v1.csv`（模型北京时间），最近结果为 `latest_forecast_utc_to_asia_shanghai_v1.json`（响应UTC）。两者均标记时间规则版本；旧缓存改名仍会拒绝，旧最近结果不会返回。升级时使用新的专用runtime目录，按UTC重新补传至少672个连续可用历史点；之后重建容器保留这个目录。不修改宿主机时区，不将旧缓存平移后直接复用。
 
 ```bash
 # 停止并移除容器，保留宿主机 runtime 数据
@@ -122,7 +118,7 @@ docker compose up -d --pull never --wait --wait-timeout 300
 在第 3.1 节的构建机执行：
 
 ```bash
-docker save -o jingneng-power-forecast.tar jingneng-power-forecast:7station-single-step-v1
+docker save -o jingneng-power-forecast.tar jingneng-power-forecast:7station-platform-v1
 ```
 
 将镜像、`compose.yaml`、`.env.example` 和交接文档传至服务器固定目录，在该目录导入：
@@ -135,7 +131,7 @@ docker load -i jingneng-power-forecast.tar
 
 ### A.2 导入配套镜像包
 
-本次单点镜像发布后，从 [公开下载仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases) 获取与交接提交号对应的镜像ZIP及校验文件，或直接接收算法方提供的同一文件。[源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases) 保存构建原件和测试报告。核对 `release.json` 中的模型为 `single_step_7station_2025_v1`；既有96点镜像不能代替本次版本。
+从 [公开下载仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases) 获取与交接提交号对应的镜像ZIP及校验文件，或直接接收算法方提供的同一文件。私有 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases) 保存构建原件和测试报告，需要仓库访问权限。旧版 `v7station-2025-042dcd1` 不包含新接口，不能代替新版。
 
 先按同名 `.zip.sha256` 文件或发布页的 `SHA256SUMS` 核对ZIP的SHA256。Linux使用 `sha256sum -c 校验文件名`；Windows使用 `Get-FileHash -Algorithm SHA256 镜像ZIP文件名`。无需把ZIP重新上传GitHub才能部署，可通过公司文件传输渠道直接交付。
 
@@ -152,7 +148,7 @@ docker load -i image.tar.gz
 
 ## 附录 B. 验证记录与验收
 
-完成镜像构建、测试和封装后，封装记录保存在镜像包内的 `release.json`，交接时核对：
+本次封装记录保存在镜像包内的 `release.json`，交接时核对：
 
 | 字段 | 核对内容 |
 |---|---|
@@ -165,12 +161,12 @@ docker load -i image.tar.gz
 
 文件完整性按 `SHA256SUMS` 校验。镜像内仅包含运行代码、依赖及当前七站模型；文档、样例位于交付包外层，不参与运行。
 
-历史Release及提交 `11f034b` 的既有附件仍属于旧96点版本，本地修改不会改变已发布附件。单点版本交付必须使用新标签及对应源码提交，不覆盖旧版校验文件。Release附件不受Actions制品14天保留期限制。
+历史Release绑定源码提交 `042dcd1ccd1dd75f22cf9849a1cfffc14a93802e`，本地接口修改不会改变已发布附件。新交付必须使用新标签及对应源码提交，不覆盖旧版校验文件。Release附件不受Actions制品14天保留期限制。
 
-后续构建：GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。通过全部测试后，工作流直接将 `offline-image-…zip`、同名 `.sha256` 和 `container-checks-…zip` 上传至源码仓库的 `v7station-single-step-提交号前12位` Release。Release中的架构以实际附件为准；红叉或附件缺失时不得视为交付完成。公开下载仓库由交付人员另行同步镜像及校验文件，按交付范围同步测试报告。GitHub验证流程不在GitLab自动执行。
+后续构建：GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。通过全部测试后，工作流直接将 `offline-image-…zip`、同名 `.sha256` 和 `container-checks-…zip` 上传至私有仓库的 `v7station-platform-提交号前12位` Release。Release中的架构以实际附件为准；红叉或附件缺失时不得视为交付完成。公开下载仓库由交付人员另行同步镜像及校验文件，不发布私有测试报告。GitHub验证流程不在GitLab自动执行。
 
 复测步骤见 [README](../README.md)，使用独立端口和空缓存实例，历史测试集及样例数据不发送到生产服务。`tests/`、`examples/`、`docs/` 属于交接资料，不进入运行镜像。
 
 本地实际验证记录见 [平台适配验证记录](平台适配验证记录.md)。GitHub流程已增加新接口预热、重建和镜像导入测试，以及平台接口完整测试集评分；本地修改流程文件不代表GitHub已执行。
 
-上线验收由部署方与平台对接方在目标服务器完成：核对平台UTC实际时刻与已确认的历史北京时间口径对应，检查真实数据调用、200空结果原因、1点预测、重建容器后缓存保留、访问控制、资源占用及响应时间。特别核对第一条预测时间为请求末点后15分钟、格式与请求一致，防止上下游重复换算。历史测试指标不作为实时预测精度保证，重新构建的镜像需复测。
+上线验收由部署方与平台对接方在目标服务器完成：核对平台UTC实际时刻与已确认的历史北京时间口径对应，检查真实数据调用、200空结果原因、96点预测、重建容器后缓存保留、访问控制、资源占用及响应时间。特别核对第一条预测时间为请求末点后15分钟、格式与请求一致，防止上下游重复换算。历史测试指标不作为实时预测精度保证，重新构建的镜像需复测。

@@ -27,7 +27,7 @@ class ResidualConvBlock(nn.Module):
 
 class StationAttentionHF(nn.Module):
     """
-    站点级Attention模型；当前单点权重使用MSE训练，预测下一时刻功率变化。
+    站点级Attention模型 + 高频损失优化
 
     输入：
         - x: 历史多变量时间序列 [batch, input_size, n_features]
@@ -149,6 +149,6 @@ class StationAttentionHF(nn.Module):
         # 解码：预测残差
         residual = self.decoder(torch.cat([context, fut], dim=-1)).squeeze(-1)
 
-        # horizon=1 uses the last observed power; the retrained decoder learns its change.
+        # Baseline（前一天同时刻） + 残差
         baseline = x[:, -self.horizon :, self.target_feature_idx]
         return baseline + self.residual_scale * residual
