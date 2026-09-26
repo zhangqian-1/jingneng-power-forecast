@@ -6,7 +6,7 @@
 
 生产运行不依赖测试集，不进行在线训练。本文面向部署及运维人员；测点、输入输出字段和调用样例见 [接口交接说明](接口交接说明.md) 与 [测点需求清单](测点需求清单.md)。
 
-历史训练数据已确认为北京时间（`Asia/Shanghai`）。本版接口收发UTC，模型内部按北京时间处理，不依赖容器或宿主机时区；响应保留请求的时间格式。目标服务器仍需联调。使用与当前源码提交对应的镜像，历史发布 `042dcd1` 的镜像不包含新接口。
+历史训练数据已确认为北京时间（`Asia/Shanghai`）。接口输入、输出均为UTC，模型内部按北京时间处理，不依赖容器或宿主机时区；响应保留请求的时间格式。AMD64、ARM64镜像均已完成构建和容器验证，目标服务器仍需联调验收。
 
 | 项目 | 要求 |
 |---|---|
@@ -131,7 +131,7 @@ docker load -i jingneng-power-forecast.tar
 
 ### A.2 导入配套镜像包
 
-从 [公开下载仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases) 获取与交接提交号对应的镜像ZIP及校验文件，或直接接收算法方提供的同一文件。私有 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases) 保存构建原件和测试报告，需要仓库访问权限。旧版 `v7station-2025-042dcd1` 不包含新接口，不能代替新版。
+从 [本版镜像下载](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-platform-11f034bc1833) 获取一天预测的镜像ZIP及校验文件。按服务器架构选择AMD64或ARM64，包内模型版本为 `trend_detail_7station_2025_v1`。
 
 先按同名 `.zip.sha256` 文件或发布页的 `SHA256SUMS` 核对ZIP的SHA256。Linux使用 `sha256sum -c 校验文件名`；Windows使用 `Get-FileHash -Algorithm SHA256 镜像ZIP文件名`。无需把ZIP重新上传GitHub才能部署，可通过公司文件传输渠道直接交付。
 
@@ -160,8 +160,6 @@ docker load -i image.tar.gz
 | `platform_contract`、`api_timezone`、`training_timezone`、`time_policy`、`timezone_basis`、`utc_production_acceptance` | 标记接口版本、外部UTC、内部Asia/Shanghai、时间规则版本及口径依据；目标服务器验收仍待完成 |
 
 文件完整性按 `SHA256SUMS` 校验。镜像内仅包含运行代码、依赖及当前七站模型；文档、样例位于交付包外层，不参与运行。
-
-历史Release绑定源码提交 `042dcd1ccd1dd75f22cf9849a1cfffc14a93802e`，本地接口修改不会改变已发布附件。新交付必须使用新标签及对应源码提交，不覆盖旧版校验文件。Release附件不受Actions制品14天保留期限制。
 
 后续构建：GitHub 推送 `main` 默认构建 AMD64；ARM64 通过 Actions 手动运行 `Build And Test Docker Image`，选择 `architecture=arm64`。通过全部测试后，工作流直接将 `offline-image-…zip`、同名 `.sha256` 和 `container-checks-…zip` 上传至私有仓库的 `v7station-platform-提交号前12位` Release。Release中的架构以实际附件为准；红叉或附件缺失时不得视为交付完成。公开下载仓库由交付人员另行同步镜像及校验文件，不发布私有测试报告。GitHub验证流程不在GitLab自动执行。
 

@@ -1,6 +1,6 @@
-# 京能七站总功率预测服务
+# 京能七站总功率一天预测服务
 
-接收七站真实功率、温度和湿度，返回未来24小时的 **96点总功率预测**，间隔15分钟，单位MW。当前模型为 `trend_detail_7station_2025_v1`，包含NHITS、PatchTST和StationAttentionHF的TrendDetail融合；无需重新训练。
+预测未来24小时的96点七站总功率，间隔15分钟，单位MW。
 
 本版仅提供平台JSON接口：`POST /api/v1/fluxcast/compute`，输入 `point_table + frames`，输出 `result_point`。`varname` 为 `totalPowerForecast`，`event_key` 沿用 `JNH.Fluxcast.Compute`。历史/天气未就绪返回HTTP 200和空结果，附原因。
 
@@ -93,12 +93,9 @@ docker compose logs --tail 100 forecast
 
 ## 版本与下载
 
-当前源码仅保留平台接口及六个配套JSON样例，旧接口和旧样例已移除。旧版可在Git历史中查阅，下载当前版本的源码ZIP不会包含历史目录或两套代码。模型权重仍为同一套七站模型，输出不含固定历史参考 `accuracy`。
+本版为**一天预测服务**。预测未来24小时的96点七站总功率，间隔15分钟，单位MW。
 
-从GitHub默认分支 `main` 下载或克隆当前源码；交付时记录提交号。只复制该提交内的受版本管理文件，不把本地 `runtime/`、`tests/results/`、`tests/fixtures/` 或开发环境一起上传。
+- [本版源码](https://github.com/zhangqian-1/jingneng-power-forecast)
+- [本版镜像下载](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-platform-11f034bc1833)：提供AMD64、ARM64离线部署包及校验文件。
 
-[GitHub历史发布 v7station-2025-042dcd1](https://github.com/zhangqian-1/jingneng-power-forecast/releases/tag/v7station-2025-042dcd1) 包含旧接口源码及AMD64/ARM64镜像，当时测试MAPE约10.8778%。它们不包含本次平台适配，不能当作新版镜像使用。下载私有仓库附件需要有权限的账号。
-
-新版构建通过后，镜像ZIP、ZIP校验文件及测试报告直接保存至 [源码仓库Releases](https://github.com/zhangqian-1/jingneng-power-forecast/releases)，标签为 `v7station-platform-提交号前12位`，不再依赖Actions产物存储。确认版本后，镜像可另行发布至 [公开下载仓库](https://github.com/zhangqian-1/jingneng-power-forecast-downloads/releases)，也可将完整ZIP及校验文件直接发给部署人员。公开下载仓库的自动生成 `Source code` 附件只有下载说明，不是算法源码或镜像。
-
-交付时核对源码、镜像、`release.json` 和 `SHA256SUMS` 对应关系，按服务器架构选择一个镜像ZIP。正式上线前仍须完成目标服务器平台联调。
+按服务器架构选择对应镜像，部署步骤见 [Docker部署运行说明](docs/Docker部署运行说明.md)。
